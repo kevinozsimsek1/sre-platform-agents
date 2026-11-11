@@ -1,0 +1,108 @@
+# Değişkenler deploy.env'den gelir:
+#   set -a; source deploy.env; set +a
+#   envsubst '$ECR_REGISTRY $PROM_DS_UID $TEMPO_DS_UID $AWS_PROD_ACCOUNT' < k8s.yaml | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-gateway
+  namespace: mcp-llm-agent
+  labels:
+    app: agent-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-gateway
+  template:
+    metadata:
+      labels:
+        app: agent-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ${ECR_REGISTRY}/agent-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: CLOUDWATCH_UPSTREAM
+              value: cloudwatch-agent.mcp-llm-agent.svc.cluster.local:80
+            - name: EKS_UPSTREAM
+              value: eks-agent.mcp-llm-agent.svc.cluster.local:8080
+            - name: PORTAL_API_UPSTREAM
+              value: 127.0.0.1:8000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+        # Portal API: Grafana/Prometheus'tan salt-okuma veri, agent analizleri, denetim kaydı.
+        - name: portal-api
+          image: ${ECR_REGISTRY}/sre-portal-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: api
+          envFrom:
+            - secretRef:
+                name: sre-portal-grafana          # GRAFANA_URL, GRAFANA_USER, GRAFANA_PASS
+            - secretRef:
+                name: sre-portal-admin            # ADMIN_PASSWORD_HASH (denetim kaydı ekranı)
+                optional: true
+          env:
+            - name: DATA_DIR
+              value: /data
+            - name: PROM_DS_UID
+              value: "${PROM_DS_UID}"
+            - name: TEMPO_DS_UID
+              value: "${TEMPO_DS_UID}"
+            - name: AWS_PROD_ACCOUNT
+              value: "${AWS_PROD_ACCOUNT}"
+          volumeMounts:
+            - name: portal-data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /_portal/api/health
+              port: api
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+      volumes:
+        # Analizler ve denetim kaydı burada. emptyDir ücretsizdir ama pod yeniden başlarsa silinir.
+        - name: portal-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-gateway
+  namespace: mcp-llm-agent
+  labels:
+    app: agent-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# Ortama özel değerler ve iç notlar repoya girmez
+deploy.env
+*-notlari.md

@@ -1,0 +1,111 @@
+upstream cloudwatch_agent { server ${CLOUDWATCH_UPSTREAM}; }
+upstream eks_agent        { server ${EKS_UPSTREAM}; }
+upstream portal_api       { server ${PORTAL_API_UPSTREAM}; }
+
+# Agent UI'ları mutlak yol kullanıyor (/chat, /app.js, /api/...).
+# Bu istekler kök yola düştüğünde hangi agent'a ait olduğunu önce
+# Referer'dan (/cloudwatch/... veya /eks/... sayfasından mı geldi),
+# o yoksa son seçilen agent'ı tutan "agent" çerezinden buluyoruz.
+map $http_referer $agent_from_referer {
+  ~^https?://[^/]+/cloudwatch(/|$)  cloudwatch_agent;
+  ~^https?://[^/]+/eks(/|$)         eks_agent;
+  default                           "";
+}
+
+map $cookie_agent $agent_from_cookie {
+  cloudwatch  cloudwatch_agent;
+  eks         eks_agent;
+  default     "";
+}
+
+map "$agent_from_referer:$agent_from_cookie" $agent_upstream {
+  ~^([^:]+):   $1;
+  ~^:(.+)$     $1;
+  default      "";
+}
+
+map $agent_upstream $agent_name {
+  cloudwatch_agent  cloudwatch;
+  eks_agent         eks;
+  default           "";
+}
+
+server {
+  listen 80;
+
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_read_timeout 180s;
+  proxy_buffering off;
+
+  # Ana sayfa: SRE Portal (React uygulaması). Sayfalar hash ile açılır (/#/alerts),
+  # bu yüzden sadece "/" ve /_portal/ altındaki dosyalar gerekir.
+  location = / {
+    root /usr/share/nginx/html;
+    add_header Cache-Control "no-cache" always;
+    try_files /_portal/index.html =404;
+  }
+
+  # Portal dosyaları. Vite dosya adlarına hash eklediği için assets uzun süre önbelleğe alınabilir.
+  location /_portal/assets/ {
+    root /usr/share/nginx/html;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+  }
+
+  # Portal API (aynı pod'daki portal-api container'ı)
+  location /_portal/api/ {
+    proxy_pass http://portal_api;
+    proxy_read_timeout 300s;
+  }
+  # Agent denetim kaydı ucu sadece nginx'in kendi mirror'ı içindir; dışarıdan çağrılamaz.
+  location = /_portal/api/audit/mirror { return 404; }
+
+  location /_portal/ {
+    root /usr/share/nginx/html;
+  }
+
+  location = /healthz {
+    access_log off;
+    return 200 "ok";
+  }
+
+  # Agent arayüzlerine giden her isteğin bir kopyası denetim kaydına gider (kim, hangi agent'a ne sordu).
+  location = /_portal_mirror {
+    internal;
+    proxy_pass http://portal_api/_portal/api/audit/mirror;
+    # Bu location kendi başlıklarını tanımladığı için server düzeyindekiler devralınmaz; IP'yi burada da ver.
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-Original-Method $request_method;
+    proxy_set_header X-Agent $agent_name;
+    proxy_connect_timeout 1s;
+    proxy_read_timeout 3s;
+  }
+
+  # /cloudwatch  ->  /cloudwatch/
+  location = /cloudwatch { return 301 /cloudwatch/; }
+  location /cloudwatch/ {
+    mirror /_portal_mirror;
+    add_header Set-Cookie "agent=cloudwatch; Path=/; SameSite=Lax" always;
+    proxy_pass http://cloudwatch_agent/;
+  }
+
+  # /eks  ->  /eks/
+  location = /eks { return 301 /eks/; }
+  location /eks/ {
+    mirror /_portal_mirror;
+    add_header Set-Cookie "agent=eks; Path=/; SameSite=Lax" always;
+    proxy_pass http://eks_agent/;
+  }
+
+  # Agent UI'larının kök yola yaptığı istekler (/chat, /app.js, ...)
+  location / {
+    if ($agent_upstream = "") { return 404; }
+    mirror /_portal_mirror;
+    proxy_pass http://$agent_upstream;
+  }
+}

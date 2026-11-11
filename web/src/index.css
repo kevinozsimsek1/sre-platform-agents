@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/* Portal renk ve font token'ları.
+   Tema <html data-theme="light|dark|blue"> ile seçilir; attribute yoksa işletim sisteminin ayarı izlenir. */
+@theme {
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Açık (beyaz) tema: varsayılan değerler */
+  --color-canvas: #f6f7f9;
+  --color-panel: #ffffff;
+  --color-edge: #e1e5ea;
+  --color-edge-soft: #eef1f4;
+  --color-ink: #13171c;
+  --color-ink-2: #4b5560;
+  --color-ink-3: #737c87;
+  --color-accent: #2a78d6;
+  --color-accent-soft: #e6f0fb;
+  --color-series-2: #eb6834;
+  --color-crit: #c63535;
+  --color-crit-soft: #fdeaea;
+  --color-warn: #9a6800;
+  --color-warn-soft: #fff3d4;
+  --color-good: #0b7d0b;
+  --color-good-soft: #e4f5e4;
+}
+
+@layer base {
+  :root[data-theme="dark"] {
+    --color-canvas: #111316;
+    --color-panel: #181b1f;
+    --color-edge: #2c3138;
+    --color-edge-soft: #22262b;
+    --color-ink: #eef0f2;
+    --color-ink-2: #b3bac2;
+    --color-ink-3: #8a929b;
+    --color-accent: #3987e5;
+    --color-accent-soft: #172a42;
+    --color-series-2: #d95926;
+    --color-crit: #e66767;
+    --color-crit-soft: #3a1c1c;
+    --color-warn: #f0b429;
+    --color-warn-soft: #3a2f12;
+    --color-good: #4cc24c;
+    --color-good-soft: #173117;
+    color-scheme: dark;
+  }
+
+  /* Mavi tema: lacivert zemin, açık mavi vurgu */
+  :root[data-theme="blue"] {
+    --color-canvas: #0b1730;
+    --color-panel: #102142;
+    --color-edge: #22396a;
+    --color-edge-soft: #172c55;
+    --color-ink: #eaf1ff;
+    --color-ink-2: #b2c3e6;
+    --color-ink-3: #8399c4;
+    --color-accent: #5fa8ff;
+    --color-accent-soft: #1a3a6e;
+    --color-series-2: #ff9a5c;
+    --color-crit: #ff7a7a;
+    --color-crit-soft: #47203a;
+    --color-warn: #ffc94d;
+    --color-warn-soft: #3d3524;
+    --color-good: #5fd88a;
+    --color-good-soft: #163d34;
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --color-canvas: #111316;
+      --color-panel: #181b1f;
+      --color-edge: #2c3138;
+      --color-edge-soft: #22262b;
+      --color-ink: #eef0f2;
+      --color-ink-2: #b3bac2;
+      --color-ink-3: #8a929b;
+      --color-accent: #3987e5;
+      --color-accent-soft: #172a42;
+      --color-series-2: #d95926;
+      --color-crit: #e66767;
+      --color-crit-soft: #3a1c1c;
+      --color-warn: #f0b429;
+      --color-warn-soft: #3a2f12;
+      --color-good: #4cc24c;
+      --color-good-soft: #173117;
+      color-scheme: dark;
+    }
+  }
+
+  html, body, #root { height: 100%; }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { text-wrap: balance; }
+  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+}
