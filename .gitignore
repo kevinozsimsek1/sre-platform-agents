@@ -7,3 +7,4 @@ __pycache__/
 # Ortama özel değerler ve iç notlar repoya girmez
 deploy.env
 *-notlari.md
+api/data/

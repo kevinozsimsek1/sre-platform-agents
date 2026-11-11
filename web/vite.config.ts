@@ -8,8 +8,10 @@ export default defineConfig({
   base: "/_portal/",
   plugins: [react(), tailwindcss()],
   server: {
-    // Yerel geliştirme: `kubectl port-forward -n mcp-llm-agent svc/agent-gateway 8080:80`
+    // Yerel geliştirme: API'yi 8000'de çalıştır (README'ye bak).
+    // Agent'lar için: `kubectl port-forward -n mcp-llm-agent svc/agent-gateway 8080:80`
     proxy: {
+      "/_portal/api": "http://localhost:8000",
       "/cloudwatch": "http://localhost:8080",
       "/eks": "http://localhost:8080",
     },
