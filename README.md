@@ -24,34 +24,22 @@ git clone https://github.com/kevinozsimsek1/sre-platform-agents.git
 cd sre-platform-agents
 ```
 
-2. Ayar dosyasını oluştur. `deploy.env.example` dosyasını kopyala, içini kendi değerlerinle doldur.
-
-```bash
-cp deploy.env.example deploy.env
-```
-
-`PROM_DS_UID` ve `TEMPO_DS_UID` Grafana'daki datasource'ların UID'leri. Grafana'da Connections > Data sources'a girip datasource'a tıklayınca adres çubuğunda görürsün.
-
-3. İki image'ı build et.
+2. İki image'ı build et.
 
 ```bash
 docker build -t sre-portal .
 docker build -t sre-portal-api api
 ```
 
-4. Çalıştır. Grafana bilgilerini kendi bilgilerinle değiştir.
+3. Çalıştır. Grafana adresini, kullanıcı adını ve şifreni kendi bilgilerinle değiştir, başka bir şey yazmana gerek yok.
 
 ```bash
-set -a; source deploy.env; set +a
 docker network create sre-portal
 
 docker run -d --name portal-api --network sre-portal \
   -e GRAFANA_URL=https://grafana.sirketin.com \
   -e GRAFANA_USER=kullanici_adin \
   -e GRAFANA_PASS=sifren \
-  -e PROM_DS_UID=$PROM_DS_UID \
-  -e TEMPO_DS_UID=$TEMPO_DS_UID \
-  -e AWS_PROD_ACCOUNT=$AWS_PROD_ACCOUNT \
   -v sre-portal-data:/data \
   sre-portal-api
 
@@ -62,7 +50,7 @@ docker run -d --name portal-web --network sre-portal -p 8088:80 \
   sre-portal
 ```
 
-5. Tarayıcıda http://localhost:8088 adresini aç. İlk açılışta veri 15-20 saniye kadar yüklenir, sonra hızlanır.
+4. Tarayıcıda http://localhost:8088 adresini aç. İlk açılışta veri 15-20 saniye kadar yüklenir, sonra hızlanır.
 
 Agent'lar lokalde olmadığı için agent kartları "kapalı" görünür, bu normal. Agent'ları da görmek istersen cluster'daki gateway'e port-forward ile bağlan (aşağıda var).
 
@@ -82,8 +70,7 @@ API'yi başlat:
 cd api
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-GRAFANA_URL=https://grafana.sirketin.com GRAFANA_USER=kullanici_adin GRAFANA_PASS=sifren \
-PROM_DS_UID=... TEMPO_DS_UID=... DATA_DIR=./data \
+GRAFANA_URL=https://grafana.sirketin.com GRAFANA_USER=kullanici_adin GRAFANA_PASS=sifren DATA_DIR=./data \
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
@@ -106,8 +93,8 @@ API'nin okuduğu ortam değişkenleri:
 | `GRAFANA_URL` | Grafana adresi |
 | `GRAFANA_USER` / `GRAFANA_PASS` | Grafana kullanıcısı. Token varsa onun yerine `GRAFANA_TOKEN` kullan |
 | `GRAFANA_ORGS` | Alert kurallarının olduğu org'lar, varsayılan `3,1` |
-| `PROM_DS_UID` | SLO hesabı için Prometheus datasource UID'i |
-| `TEMPO_DS_UID` | Trace linkleri için Tempo datasource UID'i (zorunlu değil) |
+| `PROM_DS_UID` | SLO hesabı için Prometheus datasource UID'i. Boş bırakırsan portal Grafana'dan kendisi bulur (adında "prod" geçeni seçer) |
+| `TEMPO_DS_UID` | Trace linkleri için Tempo datasource UID'i. Boş bırakırsan kendisi bulur |
 | `AWS_PROD_ACCOUNT` | AWS linklerinin yanında gösterilen hesap numarası (zorunlu değil) |
 | `ADMIN_PASSWORD_HASH` | Denetim kaydı ekranının şifresi (aşağıya bak) |
 | `DATA_DIR` | Agent analizlerinin ve denetim kaydının yazıldığı klasör |
@@ -133,6 +120,12 @@ unset PW
 Çıkan değeri `ADMIN_PASSWORD_HASH` olarak ver. Bash kullanıyorsan ilk satırı `read -s -p "Şifre: " PW && echo` diye yaz.
 
 ## Cluster'a deploy
+
+Önce proje klasöründe (README'nin olduğu yerde) `deploy.env` dosyasını oluştur ve içini doldur. Bu dosya git'e gitmez.
+
+```bash
+cp deploy.env.example deploy.env
+```
 
 Image'ları amd64 için build edip ECR'a gönder:
 

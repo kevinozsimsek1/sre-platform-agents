@@ -37,10 +37,25 @@ async def get(path: str, org: int, params: dict[str, Any] | None = None) -> Any:
     return r.json()
 
 
+_found: dict[str, str] = {}
+
+
+async def find_datasource(kind: str, configured: str) -> str:
+    """Ayarda UID verilmediyse Grafana'dan bulur: adında "prod" geçen ilk {kind} datasource'u, yoksa ilk {kind}."""
+    if configured:
+        return configured
+    if kind not in _found:
+        dss = [d for d in await get("/api/datasources", config.PROM_ORG) if d.get("type") == kind]
+        if not dss:
+            raise GrafanaError(f"Grafana'da {kind} datasource'u bulunamadı.")
+        pick = next((d for d in dss if "prod" in d.get("name", "").lower()), dss[0])
+        _found[kind] = pick["uid"]
+    return _found[kind]
+
+
 async def prom(query: str, kind: str = "query", **params: Any) -> list[dict]:
-    if not config.PROM_DS_UID:
-        raise GrafanaError("PROM_DS_UID tanımlı değil; SLO için Prometheus datasource UID'i gerekli.")
-    path = f"/api/datasources/proxy/uid/{config.PROM_DS_UID}/api/v1/{kind}"
+    uid = await find_datasource("prometheus", config.PROM_DS_UID)
+    path = f"/api/datasources/proxy/uid/{uid}/api/v1/{kind}"
     data = await get(path, config.PROM_ORG, {"query": query, **params})
     if data.get("status") != "success":
         raise GrafanaError(f"Prometheus sorgusu başarısız: {data}")

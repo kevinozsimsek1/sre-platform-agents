@@ -72,7 +72,11 @@ async def public_config() -> dict:
 
 @api.get("/overview")
 async def overview(refresh: bool = False) -> dict:
-    m, s, g = await asyncio.gather(model(refresh), slo_overview(refresh), cached("gpu", 300, gpu.overview, refresh))
+    m, g = await asyncio.gather(model(refresh), cached("gpu", 300, gpu.overview, refresh))
+    try:
+        s = await slo_overview(refresh)
+    except HTTPException:
+        s = {"services": []}  # SLO alınamazsa genel bakış yine açılsın
     summ = analysis.summary(m)
     day_ago = int(time.time() * 1000) - 86_400_000
     # Watchdog / DeadMansSwitch tasarım gereği hep alarmdadır; "şu an alarmda" listesine alınmaz.

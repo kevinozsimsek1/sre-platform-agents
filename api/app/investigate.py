@@ -183,7 +183,9 @@ def prom_hint(org: int, expr: str, labels: dict[str, str], dss: dict[str, dict],
                      f"kubectl --context {ctx} -n {ns} get events --sort-by=.lastTimestamp | tail -20",
                      f"kubectl --context {ctx} -n {ns} logs {pod} --all-containers --previous --tail=100"]
         ex("Namespace'teki bekleyen container'lar", f'sum by (pod, container, reason) (kube_pod_container_status_waiting_reason{{namespace="{ns}"}})' if ns else "sum by (namespace, reason) (kube_pod_container_status_waiting_reason)")
-    if svc and config.TEMPO_DS_UID:
+    tempo_uid = config.TEMPO_DS_UID or next((u for u, d in dss.items() if d["type"] == "tempo" and "prod" in d["name"].lower()), None) \
+        or next((u for u, d in dss.items() if d["type"] == "tempo"), None)
+    if svc and tempo_uid:
         tq = f'{{resource.service.name="{svc}" && status=error}}'
-        links.append({"label": f"Tempo: {svc} hatalı trace'ler", "url": explore(org, {"uid": config.TEMPO_DS_UID, "type": "tempo"}, {"queryType": "traceql", "query": tq, "limit": 20}, start, end), "kind": "grafana"})
+        links.append({"label": f"Tempo: {svc} hatalı trace'ler", "url": explore(org, {"uid": tempo_uid, "type": "tempo"}, {"queryType": "traceql", "query": tq, "limit": 20}, start, end), "kind": "grafana"})
     return {"title": "Metrik ve trace ipuçları", "why": why, "links": links, "commands": cmds}
