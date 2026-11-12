@@ -1,0 +1,22 @@
+# Servis hedefleri (SLO). Hedefi servisin sahibi ekip belirler; burada kodla birlikte tutulur
+# ve her değişiklik git geçmişinde görünür. Tanımlanmamış servislerde [default] kullanılır.
+#
+# availability   : 5xx dönmeyen isteklerin oranı için hedef (yüzde)
+# latency_ms     : "hızlı" sayılan yanıt süresi sınırı (milisaniye)
+# latency_target : isteklerin yüzde kaçının bu sınırın altında kalması gerektiği
+# owner / note   : hedefin sahibi ve gerekçesi (portalda görünür)
+#
+# Gecikme sınırı Prometheus histogram sınırlarına denk gelmeli:
+# 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000 ms
+
+[default]
+availability = 99.9
+latency_ms = 500
+latency_target = 99.0
+
+# Örnek: bir servise özel hedef
+# [services."plt-comm-workflow-manager"]
+# latency_ms = 5000
+# latency_target = 95.0
+# owner = "Platform ekibi"
+# note = "İş akışları uzun sürüyor; kullanıcı bu işleri arka planda bekliyor."

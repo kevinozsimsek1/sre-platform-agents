@@ -1,131 +1,233 @@
-"""SLO ve hata bütçesi. Kaynak: OpenTelemetry http_server_request_duration_seconds (Prometheus).
+"""Servis hedefleri (SLO). Kaynak: OpenTelemetry http_server_request_duration_seconds (Prometheus).
 
-SLI tanımları (Google SRE workbook'a uygun, istek tabanlı):
-  - Erişilebilirlik: 5xx olmayan istek / tüm istek
-  - Gecikme: SLO_LATENCY_LE saniyenin altında biten istek / tüm istek
-Sağlık kontrolü uçları (health, ready, live, metrics ...) ve WebSocket upgrade (101) hariç tutulur.
+Ölçüler (istek tabanlı):
+  - Erişilebilirlik: 5xx dönmeyen istek / tüm istek
+  - Hız: belirlenen süre sınırının altında biten istek / tüm istek
+Sağlık kontrolü uçları ve WebSocket upgrade (101) sayılmaz.
+
+Hedefler slo-targets.toml dosyasından gelir (servis sahibi belirler). Dosyada olmayan servislerde
+varsayılan hedef kullanılır. Portal ayrıca geçmiş performansa göre gerçekçi bir hedef önerir.
 """
 from __future__ import annotations
 
 import asyncio
+import math
+import os
 import time
+import tomllib
+from typing import Any
 
 from . import config, grafana
 
 M = "http_server_request_duration_seconds"
 FIVEXX = 'http_response_status_code=~"5.."'
+BUCKETS_MS = [5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000]
+STANDARD_AVAIL = [99.99, 99.95, 99.9, 99.5, 99.0, 98.0, 95.0]
+TARGETS_FILE = os.getenv("SLO_TARGETS_FILE", os.path.join(os.path.dirname(__file__), "..", "slo-targets.toml"))
 
 
-def le_sel() -> str:
-    return f'le="{config.SLO_LATENCY_LE}"'
+# ------------------------------------------------------------- hedefler
+def _load_targets() -> tuple[dict, dict]:
+    try:
+        with open(TARGETS_FILE, "rb") as f:
+            data = tomllib.load(f)
+    except FileNotFoundError:
+        data = {}
+    d = {"availability": 99.9, "latency_ms": 500, "latency_target": 99.0, **data.get("default", {})}
+    return d, data.get("services", {})
 
 
+def _bucket(ms: float) -> int:
+    """Süre sınırını histogramdaki en yakın (eşit ya da büyük) sınıra yuvarlar."""
+    return next((b for b in BUCKETS_MS if b >= ms), BUCKETS_MS[-1])
+
+
+def target_for(svc: str) -> dict[str, Any]:
+    default, services = _load_targets()
+    own = services.get(svc)
+    t = {**default, **(own or {})}
+    le_ms = _bucket(float(t["latency_ms"]))
+    return {
+        "availability": round(float(t["availability"]) / 100, 6), "latency_ms": le_ms, "latency_target": round(float(t["latency_target"]) / 100, 6),
+        "source": "tanımlı" if own else "varsayılan", "owner": t.get("owner"), "note": t.get("note"),
+        "approx": le_ms != float(t["latency_ms"]),
+    }
+
+
+# ------------------------------------------------------------- sorgular
 def _sel(extra: str = "") -> str:
     base = f'http_route!~"{config.SLO_EXCLUDE_ROUTES}",http_route!="",http_response_status_code!="101"'
     return "{" + base + (("," + extra) if extra else "") + "}"
 
 
-def _num(res: list[dict], key: str = "service_name") -> dict[str, float]:
-    return {r["metric"].get(key, "?"): float(r["value"][1]) for r in res}
-
-
-async def _window(rng: str, svc: str | None = None, by: str = "service_name") -> dict[str, dict[str, float]]:
-    base = [f'service_name="{svc}"'] if svc else []
-
-    def sel(*extra: str) -> str:
-        return _sel(",".join(base + list(extra)))
-
-    total, bad, fast = await asyncio.gather(
+async def _window(rng: str, svc: str | None = None, by: str = "service_name") -> dict[str, dict]:
+    """Her grup için: toplam, 5xx ve süre sınırı (bucket) başına hızlı istek sayısı."""
+    f = f'service_name="{svc}"' if svc else ""
+    sel = lambda extra="": _sel(",".join(x for x in (f, extra) if x))  # noqa: E731
+    total, bad, buckets = await asyncio.gather(
         grafana.prom(f"sum by ({by}) (increase({M}_count{sel()}[{rng}]))"),
-        grafana.prom(f'sum by ({by}) (increase({M}_count{sel(FIVEXX)}[{rng}]))'),
-        grafana.prom(f"sum by ({by}) (increase({M}_bucket{sel(le_sel())}[{rng}]))"),
+        grafana.prom(f"sum by ({by}) (increase({M}_count{sel(FIVEXX)}[{rng}]))"),
+        grafana.prom(f"sum by ({by}, le) (increase({M}_bucket{sel()}[{rng}]))"),
     )
-    t, b, fa = _num(total, by), _num(bad, by), _num(fast, by)
-    return {k: {"total": v, "bad": b.get(k, 0.0), "fast": fa.get(k, 0.0)} for k, v in t.items()}
+    out: dict[str, dict] = {}
+    for r in total:
+        out[r["metric"].get(by, "?")] = {"total": float(r["value"][1]), "bad": 0.0, "le": {}}
+    for r in bad:
+        k = r["metric"].get(by, "?")
+        if k in out:
+            out[k]["bad"] = float(r["value"][1])
+    for r in buckets:
+        k, le = r["metric"].get(by, "?"), r["metric"].get("le")
+        if k in out and le and le != "+Inf":
+            out[k]["le"][round(float(le) * 1000)] = float(r["value"][1])
+    return out
 
 
-def _sli(w: dict[str, float]) -> dict[str, float | None]:
-    t = w["total"]
-    if t <= 0:
-        return {"availability": None, "latency": None}
-    return {"availability": 1 - w["bad"] / t, "latency": min(1.0, w["fast"] / t)}
+def _fast(w: dict, le_ms: int) -> float:
+    return min(w["le"].get(le_ms, 0.0), w["total"])
 
 
-def _budget(w: dict[str, float]) -> dict[str, float | None]:
-    """Kalan hata bütçesi (0–1, negatifse aşılmış) ve tüketim hızı (burn rate)."""
-    t = w["total"]
-    if t <= 0:
-        return {"avail_left": None, "lat_left": None}
-    allowed_bad = (1 - config.SLO_AVAILABILITY) * t
-    allowed_slow = (1 - config.SLO_LATENCY) * t
-    slow = max(0.0, t - w["fast"])
-    return {"avail_left": 1 - w["bad"] / allowed_bad if allowed_bad else None,
-            "lat_left": 1 - slow / allowed_slow if allowed_slow else None}
+def _p(w: dict, q: float) -> float | None:
+    """Histogramdan yaklaşık yüzdelik (ms): q oranındaki isteğin bittiği ilk sınır."""
+    if w["total"] <= 0:
+        return None
+    for b in BUCKETS_MS:
+        if w["le"].get(b, 0) >= q * w["total"]:
+            return b
+    return None
 
 
-def _burn(w: dict[str, float] | None, target: float, kind: str) -> float | None:
+def _suggest(w: dict) -> dict[str, Any]:
+    """Geçmiş performansa göre gerçekçi hedef: bugün tutturulabilen en iddialı standart seviye."""
+    if w["total"] < config.SLO_MIN_REQUESTS:
+        return {}
+    avail = 100 * (1 - w["bad"] / w["total"])
+    av = next((a for a in STANDARD_AVAIL if a <= avail), STANDARD_AVAIL[-1])
+    p99 = _p(w, 0.99)
+    out: dict[str, Any] = {"availability": round(av / 100, 6)}
+    if p99:
+        # İsteklerin %99'unun bittiği sınır; en az 100 ms ki küçük dalgalanmalar hedefi bozmasın
+        out.update(latency_ms=max(100, p99), latency_target=0.99)
+    return out
+
+
+def _measure(w: dict | None, t: dict) -> dict[str, Any] | None:
     if not w or w["total"] <= 0:
         return None
-    err = w["bad"] / w["total"] if kind == "a" else max(0.0, w["total"] - w["fast"]) / w["total"]
-    return round(err / (1 - target), 2)
+    fast = _fast(w, t["latency_ms"])
+    return {"requests": int(w["total"]), "errors_5xx": int(w["bad"]), "slow": int(max(0, w["total"] - fast)),
+            "availability": 1 - w["bad"] / w["total"], "latency": fast / w["total"]}
+
+
+def _status(m: dict | None, t: dict) -> str:
+    if not m or m["requests"] < config.SLO_MIN_REQUESTS:
+        return "low_traffic"
+    if m["availability"] < t["availability"] or m["latency"] < t["latency_target"]:
+        return "breached"
+    # hedefin üstünde ama payın çoğunu kullanmış
+    a_room = (1 - t["availability"]) * m["requests"]
+    l_room = (1 - t["latency_target"]) * m["requests"]
+    used = max(m["errors_5xx"] / a_room if a_room else 0, m["slow"] / l_room if l_room else 0)
+    return "at_risk" if used > 0.75 else "ok"
+
+
+def _trend(m30: dict | None, m7: dict | None) -> str | None:
+    """Son 7 gün, 30 günlük ortalamadan belirgin şekilde iyi mi kötü mü?"""
+    if not m30 or not m7 or m7["requests"] < 200:
+        return None
+    a = (1 - m7["latency"]) - (1 - m30["latency"])
+    b = (1 - m7["availability"]) - (1 - m30["availability"])
+    d = a + 10 * b
+    if d > 0.005:
+        return "worse"
+    if d < -0.005:
+        return "better"
+    return "same"
+
+
+def _explain(m: dict | None, t: dict) -> str | None:
+    """Teknik olmayan dille tek cümle."""
+    if not m or m["requests"] <= 0:
+        return None
+    parts = []
+    if m["latency"] < t["latency_target"]:
+        share = m["slow"] / m["requests"]
+        if share >= 0.3:
+            parts.append(f"{t['latency_ms']} ms'den yavaş istek oranı %{round(share * 100)}")
+        else:
+            parts.append(f"her {math.floor(m['requests'] / max(m['slow'], 1))} istekten 1'i {t['latency_ms']} ms'den yavaş")
+    if m["availability"] < t["availability"]:
+        n = m["requests"] / max(m["errors_5xx"], 1)
+        parts.append(f"her {math.floor(n):,} istekten 1'i hata ile sonuçlanıyor".replace(",", "."))
+    if not parts:
+        return "Hedefin içinde."
+    text = "; ".join(parts)
+    first = {"i": "İ", "ı": "I"}.get(text[0], text[0].upper())
+    return first + text[1:] + "."
 
 
 async def overview() -> dict:
     rng = f"{config.WINDOW_DAYS}d"
-    w30, w7, w1 = await asyncio.gather(_window(rng), _window("7d"), _window("1d"))
+    w30, w7 = await asyncio.gather(_window(rng), _window("7d"))
+    default, _ = _load_targets()
     services = []
     for svc, w in w30.items():
-        sli, bud = _sli(w), _budget(w)
-        enough = w["total"] >= config.SLO_MIN_REQUESTS
-        status = "low_traffic"
-        if enough:
-            worst = min(x for x in (bud["avail_left"], bud["lat_left"]) if x is not None)
-            status = "breached" if worst < 0 else "at_risk" if worst < 0.25 else "ok"
+        t = target_for(svc)
+        m, m7 = _measure(w, t), _measure(w7.get(svc), t)
+        allowed_slow = int((1 - t["latency_target"]) * m["requests"]) if m else 0
+        allowed_err = int((1 - t["availability"]) * m["requests"]) if m else 0
         services.append({
-            "service": svc, "requests": int(w["total"]), "errors_5xx": int(w["bad"]), "slow": int(max(0, w["total"] - w["fast"])),
-            **sli, **bud, "status": status,
-            "burn_7d": {"availability": _burn(w7.get(svc), config.SLO_AVAILABILITY, "a"), "latency": _burn(w7.get(svc), config.SLO_LATENCY, "l")},
-            "burn_1d": {"availability": _burn(w1.get(svc), config.SLO_AVAILABILITY, "a"), "latency": _burn(w1.get(svc), config.SLO_LATENCY, "l")},
+            "service": svc, "target": t, "measured": m, "status": _status(m, t), "trend": _trend(m, m7),
+            "explain": _explain(m, t), "allowed": {"slow": allowed_slow, "errors": allowed_err},
+            "suggested": _suggest(w), "p99_ms": _p(w, 0.99), "p95_ms": _p(w, 0.95),
         })
     order = {"breached": 0, "at_risk": 1, "ok": 2, "low_traffic": 3}
-    services.sort(key=lambda s: (order[s["status"]], -s["requests"]))
+    services.sort(key=lambda s: (order[s["status"]], -(s["measured"] or {}).get("requests", 0)))
     return {
-        "fetched_at": int(time.time() * 1000),
-        "objectives": {"availability": config.SLO_AVAILABILITY, "latency": config.SLO_LATENCY, "latency_le_s": float(config.SLO_LATENCY_LE),
-                       "window_days": config.WINDOW_DAYS, "min_requests": config.SLO_MIN_REQUESTS},
+        "fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS, "min_requests": config.SLO_MIN_REQUESTS,
+        "default": {"availability": round(float(default["availability"]) / 100, 6), "latency_ms": _bucket(float(default["latency_ms"])),
+                    "latency_target": round(float(default["latency_target"]) / 100, 6)},
+        "targets_file": "api/slo-targets.toml",
         "services": services,
     }
 
 
 async def service_detail(svc: str) -> dict:
-    rng = f"{config.WINDOW_DAYS}d"
+    t = target_for(svc)
     now = int(time.time())
     step = 86400
     f = f'service_name="{svc}"'
 
     async def daily(q: str) -> dict[int, float]:
         res = await grafana.prom(q, "query_range", start=now - config.WINDOW_DAYS * step, end=now, step=step)
-        return {int(t): float(v) for r in res for t, v in r["values"]}
+        return {int(ts): float(v) for r in res for ts, v in r["values"]}
 
+    le_sel = f'le="{t["latency_ms"] / 1000:g}"'  # Prometheus'taki biçim: 0.5, 1, 2.5 ...
     total_d, bad_d, fast_d, routes, codes, p95 = await asyncio.gather(
         daily(f"sum(increase({M}_count{_sel(f)}[1d]))"),
         daily(f"sum(increase({M}_count{_sel(f + ',' + FIVEXX)}[1d]))"),
-        daily(f"sum(increase({M}_bucket{_sel(f + ',' + le_sel())}[1d]))"),
-        _window(rng, svc, by="http_route"),
-        grafana.prom(f"sum by (http_response_status_code) (increase({M}_count{_sel(f)}[{rng}]))"),
+        daily(f"sum(increase({M}_bucket{_sel(f + ',' + le_sel)}[1d]))"),
+        _window(f"{config.WINDOW_DAYS}d", svc, by="http_route"),
+        grafana.prom(f"sum by (http_response_status_code) (increase({M}_count{_sel(f)}[{config.WINDOW_DAYS}d]))"),
         grafana.prom(f"histogram_quantile(0.95, sum by (le, http_route) (rate({M}_bucket{_sel(f)}[7d])))"),
     )
     days = []
-    for t in sorted(total_d):
-        tot = total_d[t]
-        days.append({"t": t * 1000, "requests": int(tot),
-                     "availability": (1 - bad_d.get(t, 0) / tot) if tot > 0 else None,
-                     "latency": min(1.0, fast_d.get(t, 0) / tot) if tot > 0 else None})
+    for ts in sorted(total_d):
+        tot = total_d[ts]
+        days.append({"t": ts * 1000, "requests": int(tot),
+                     "availability": (1 - bad_d.get(ts, 0) / tot) if tot > 0 else None,
+                     "latency": min(1.0, fast_d.get(ts, 0) / tot) if tot > 0 else None})
     p95m = {r["metric"].get("http_route"): float(r["value"][1]) for r in p95 if r["value"][1] not in ("NaN", "+Inf")}
-    route_rows = [{"route": k, "requests": int(v["total"]), "errors_5xx": int(v["bad"]), "slow": int(max(0, v["total"] - v["fast"])),
-                   "p95_s": p95m.get(k)} for k, v in routes.items() if v["total"] >= 1]
-    route_rows.sort(key=lambda r: (-r["errors_5xx"], -r["slow"], -r["requests"]))
+    rows = []
+    for k, w in routes.items():
+        if w["total"] < 1:
+            continue
+        fast = _fast(w, t["latency_ms"])
+        rows.append({"route": k, "requests": int(w["total"]), "errors_5xx": int(w["bad"]), "slow": int(max(0, w["total"] - fast)),
+                     "p95_s": p95m.get(k)})
+    rows.sort(key=lambda r: (-r["errors_5xx"], -r["slow"], -r["requests"]))
     ov = await overview()
     me = next((s for s in ov["services"] if s["service"] == svc), None)
-    return {"fetched_at": int(time.time() * 1000), "objectives": ov["objectives"], "service": me, "daily": days,
-            "routes": route_rows[:40], "codes": sorted(({"code": r["metric"].get("http_response_status_code"), "count": int(float(r["value"][1]))} for r in codes), key=lambda c: c["code"] or "")}
+    return {"fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS, "targets_file": ov["targets_file"],
+            "service": me, "daily": days, "routes": rows[:40],
+            "codes": sorted(({"code": r["metric"].get("http_response_status_code"), "count": int(float(r["value"][1]))} for r in codes), key=lambda c: c["code"] or "")}

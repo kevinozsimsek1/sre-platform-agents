@@ -97,10 +97,12 @@ def rule_prompt(d: dict, episode: dict | None) -> str:
 
 
 def slo_prompt(d: dict) -> str:
-    s, o = d["service"] or {}, d["objectives"]
-    lines = [f"Prod'daki {s.get('service')} servisinin SLO durumunu incelemeni istiyorum.",
-             f"Hedefler: erişilebilirlik %{o['availability']*100:.1f}, isteklerin %{o['latency']*100:.0f}'i {o['latency_le_s']} sn altında ({o['window_days']} gün).",
-             f"Son {o['window_days']} gün: {s.get('requests')} istek, {s.get('errors_5xx')} adet 5xx, {s.get('slow')} yavaş istek.",
+    s = d["service"] or {}
+    t, m = s.get("target", {}), s.get("measured") or {}
+    lines = [f"Prod'daki {s.get('service')} servisinin hedef (SLO) durumunu incelemeni istiyorum.",
+             f"Hedef: isteklerin %{t.get('latency_target', 0)*100:.0f}'i {t.get('latency_ms')} ms altında, erişilebilirlik %{t.get('availability', 0)*100:.2f} "
+             f"(kaynak: {t.get('source')}).",
+             f"Son {d['window_days']} gün: {m.get('requests')} istek, {m.get('errors_5xx')} adet 5xx, {m.get('slow')} yavaş istek. {s.get('explain') or ''}",
              "En sorunlu route'lar (route · istek · 5xx · yavaş · p95 sn):"]
     lines += [f"- {r['route']} · {r['requests']} · {r['errors_5xx']} · {r['slow']} · {r['p95_s']}" for r in d["routes"][:10]]
     return "\n".join(lines + OUTPUT)

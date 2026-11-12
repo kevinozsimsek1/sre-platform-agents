@@ -14,7 +14,7 @@ const NAV: NavItem[] = [
   { to: "/alerts", label: "Gelen alert'ler", icon: <BellRing size={16} />, badge: "firing" },
   { to: "/incidents", label: "Olaylar ve analiz", icon: <Siren size={16} />, badge: "open" },
   { to: "/changes", label: "Değişiklikler", icon: <GitCommitHorizontal size={16} /> },
-  { to: "/slo", label: "SLO ve hata bütçesi", icon: <Target size={16} />, badge: "slo" },
+  { to: "/slo", label: "Servis hedefleri (SLO)", icon: <Target size={16} />, badge: "slo" },
   { to: "/value", label: "Maliyet ve değer", icon: <Wallet size={16} /> },
 ];
 

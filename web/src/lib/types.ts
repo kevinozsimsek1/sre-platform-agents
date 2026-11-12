@@ -65,14 +65,20 @@ export type IncidentDetail = Incident & {
   changes: ChangeBatch[];
 };
 
+export type SloTarget = { availability: number; latency_ms: number; latency_target: number; source: "tanımlı" | "varsayılan"; owner: string | null; note: string | null; approx: boolean };
+export type SloMeasured = { requests: number; errors_5xx: number; slow: number; availability: number; latency: number };
 export type SloService = {
-  service: string; requests: number; errors_5xx: number; slow: number;
-  availability: number | null; latency: number | null; avail_left: number | null; lat_left: number | null;
-  status: "breached" | "at_risk" | "ok" | "low_traffic";
-  burn_7d: { availability: number | null; latency: number | null };
-  burn_1d: { availability: number | null; latency: number | null };
+  service: string; target: SloTarget; measured: SloMeasured | null;
+  status: "breached" | "at_risk" | "ok" | "low_traffic"; trend: "better" | "worse" | "same" | null; explain: string | null;
+  allowed: { slow: number; errors: number };
+  suggested: { availability?: number; latency_ms?: number; latency_target?: number };
+  p99_ms: number | null; p95_ms: number | null;
 };
-export type Objectives = { availability: number; latency: number; latency_le_s: number; window_days: number; min_requests: number };
+export type SloList = {
+  fetched_at: number; window_days: number; min_requests: number; targets_file: string;
+  default: { availability: number; latency_ms: number; latency_target: number };
+  services: SloService[];
+};
 
 export type ChangeItem = { namespace: string; deployment: string; kind: "release" | "restart" | "unknown"; version: string | null; prev_version: string | null; t_ms: number };
 export type ChangeBatch = {

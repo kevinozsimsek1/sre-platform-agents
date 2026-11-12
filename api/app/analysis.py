@@ -669,6 +669,13 @@ def toil(m: Model) -> dict:
             "preventable": sum(i["preventable"] for i in inc),
             "shifts": n_shifts, "shifts_over": len(over), "max_shift": max(shifts.values(), default=0),
             "per_day": round(len(inc) / config.WINDOW_DAYS, 1),
+            # Önem derecesine göre (zaman tahmini ekranı için)
+            "by_severity": {sev: {"incidents": sum(1 for i in inc if i["severity"] == sev),
+                                  "preventable": sum(1 for i in inc if i["severity"] == sev and i["preventable"])}
+                            for sev in ("critical", "warning", "none")},
+            # Ölçülen: olayların gerçekten açık kaldığı süre (insan eforu değil, olay süresi)
+            "open_hours": round(sum(i["minutes"] for i in inc) / 60, 1),
+            "open_hours_offhours": round(sum(i["minutes"] for i in inc if i["offhours"]) / 60, 1),
         },
         "weeks": sorted(weeks.values(), key=lambda w: w["week"]),
         "heat": heat,

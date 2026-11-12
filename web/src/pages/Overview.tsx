@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Bot, Cpu } from "lucide-react";
 import { api } from "../lib/api";
 import type { Finding, Incident, RuleRef, RuleRow, SloService } from "../lib/types";
-import { ago, fmtDateTime, fmtMin, fmtNum, fmtPct } from "../lib/format";
+import { ago, fmtDateTime, fmtMin, fmtNum } from "../lib/format";
 import { Empty, ErrorBox, FINDING, Freshness, Loading, PageHeader, Panel, Pill, Section, Severity, Stat, type Tone } from "../components/ui";
 
 type Resp = {
@@ -115,26 +115,21 @@ export default function Overview() {
         </Section>
       </div>
 
-      <Section title="SLO'su dikkat isteyen servisler" aside={<Link to="/slo" className="text-accent">Tüm servisler</Link>}>
+      <Section title="Hedefinin altında kalan servisler" aside={<Link to="/slo" className="text-accent">Tüm servisler</Link>}>
         {d.slo_attention.length === 0 ? <Empty>Tüm servisler hedefte.</Empty> : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {d.slo_attention.map((s) => {
-              const worstLat = (s.lat_left ?? 1) < (s.avail_left ?? 1);
-              return (
-                <Link key={s.service} to={`/slo/${encodeURIComponent(s.service)}`} className="group">
-                  <Panel className="flex h-full flex-col gap-1.5 p-4 transition-colors group-hover:border-accent">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate font-semibold">{s.service}</span>
-                      <Pill tone={s.status === "breached" ? "crit" : "warn"}>{s.status === "breached" ? "aşıldı" : "risk"}</Pill>
-                    </div>
-                    <span className="text-[13px] text-ink-2">
-                      {worstLat ? `Gecikme: isteklerin ${fmtPct(s.latency, 1)}'i hedef sürenin altında` : `Erişilebilirlik: ${fmtPct(s.availability, 3)}`}
-                    </span>
-                    <span className="text-[12.5px] text-ink-3">{fmtNum(s.requests)} istek · {fmtNum(worstLat ? s.slow : s.errors_5xx)} {worstLat ? "yavaş" : "5xx"}</span>
-                  </Panel>
-                </Link>
-              );
-            })}
+            {d.slo_attention.map((s) => (
+              <Link key={s.service} to={`/slo/${encodeURIComponent(s.service)}`} className="group">
+                <Panel className="flex h-full flex-col gap-1.5 p-4 transition-colors group-hover:border-accent">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-semibold">{s.service}</span>
+                    <Pill tone={s.status === "breached" ? "crit" : "warn"}>{s.status === "breached" ? "hedefin altında" : "sınırda"}</Pill>
+                  </div>
+                  <span className="text-[13px] text-ink-2">{s.explain}</span>
+                  <span className="text-[12.5px] text-ink-3">{fmtNum(s.measured?.requests)} istek · hedef %{(s.target.latency_target * 100).toFixed(0)} · {fmtNum(s.target.latency_ms)} ms</span>
+                </Panel>
+              </Link>
+            ))}
           </div>
         )}
       </Section>

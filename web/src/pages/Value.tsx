@@ -9,7 +9,11 @@ import { ErrorBox, Freshness, Loading, PageHeader, Panel, Pill, Section, Stat, t
 type Resp = {
   toil: {
     fetched_at: number;
-    totals: { incidents: number; critical: number; offhours: number; night: number; preventable: number; shifts: number; shifts_over: number; max_shift: number; per_day: number };
+    totals: {
+      incidents: number; critical: number; offhours: number; night: number; preventable: number; shifts: number; shifts_over: number; max_shift: number; per_day: number;
+      by_severity: Record<"critical" | "warning" | "none", { incidents: number; preventable: number }>;
+      open_hours: number; open_hours_offhours: number;
+    };
     weeks: { week: string; incidents: number; critical: number; offhours: number; night: number; preventable: number; minutes: number }[];
     heat: number[][];
     worst_shifts: { day: string; shift: string; incidents: number }[];
@@ -25,6 +29,19 @@ type Resp = {
 };
 
 const DAYS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+
+type Sev = "critical" | "warning" | "none";
+const SEVS: Sev[] = ["critical", "warning", "none"];
+const SEV_META: Record<Sev, { label: string; hint: string }> = {
+  critical: { label: "Critical olay", hint: "Nöbetçi işi bırakıp bakar, çoğu zaman başka birini de çağırır." },
+  warning: { label: "Warning olay", hint: "Bildirime bakılır, Grafana açılır, gerçek mi gürültü mü karar verilir." },
+  none: { label: "Seviyesiz olay", hint: "Kuralda severity etiketi yok." },
+};
+const EFFORT_KEY = "sre-portal:effort";
+const DEFAULT_EFFORT: Record<Sev, number> = { critical: 30, warning: 10, none: 10 };
+function loadEffort(): Record<Sev, number> {
+  try { return { ...DEFAULT_EFFORT, ...JSON.parse(localStorage.getItem(EFFORT_KEY) || "{}") }; } catch { return DEFAULT_EFFORT; }
+}
 
 function Heatmap({ heat }: { heat: number[][] }) {
   const max = Math.max(1, ...heat.flat());
@@ -54,13 +71,21 @@ function Heatmap({ heat }: { heat: number[][] }) {
 export default function Value() {
   const qc = useQueryClient();
   const q = useQuery<Resp>({ queryKey: ["value"], queryFn: () => api("/value") });
-  const [minutes, setMinutes] = useState(15);
+  const [effort, setEffort] = useState<Record<Sev, number>>(loadEffort);
   if (q.isLoading) return <Loading label="Nöbet yükü ve GPU geçmişi hesaplanıyor" />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
   const { toil: t, gpu: g, analyses } = q.data!;
   const T = t.totals;
-  const hours = (T.incidents * minutes) / 60;
-  const avoidHours = (T.preventable * minutes) / 60;
+  const rows = SEVS.map((k) => ({ ...SEV_META[k], key: k, ...T.by_severity[k], min: effort[k] }))
+    .filter((r) => r.incidents > 0)
+    .map((r) => ({ ...r, hours: (r.incidents * r.min) / 60, avoid: (r.preventable * r.min) / 60 }));
+  const hours = rows.reduce((a, r) => a + r.hours, 0);
+  const avoidHours = rows.reduce((a, r) => a + r.avoid, 0);
+  const setMin = (k: Sev, v: number) => {
+    const next = { ...effort, [k]: Math.max(0, Math.min(480, Math.round(v) || 0)) };
+    setEffort(next);
+    try { localStorage.setItem(EFFORT_KEY, JSON.stringify(next)); } catch { /* özel pencere */ }
+  };
 
   return (
     <>
@@ -84,52 +109,62 @@ export default function Value() {
           <div className="flex flex-col gap-1">
             <h3 className="text-[16px] font-semibold">Alert'ler ekibin ne kadar zamanını aldı?</h3>
             <p className="text-[13.5px] text-ink-2">
-              Her olayda nöbetçi bildirimi görür, Grafana'yı açar ve bunun gerçek bir sorun mu yoksa gürültü mü olduğuna karar verir.
-              Bunun ortalama ne kadar sürdüğünü seçin; hesap ona göre değişir.
+              İki ayrı şey: olayların gerçekten ne kadar açık kaldığı (ölçülen) ve ekibin bunlara harcadığı emek (tahmin).
+              Tahmini, olayın önem derecesine göre ayrı ayrı girebilirsiniz; değerler bu tarayıcıda saklanır.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Olay başına süre">
-            <span className="mr-1 text-[13px] text-ink-2">Olay başına:</span>
-            {[5, 10, 15, 30, 60].map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={minutes === m} onClick={() => setMinutes(m)}
-                className={`rounded-md border px-3 py-1 text-[13px] tabular-nums ${minutes === m ? "border-accent bg-accent-soft font-medium text-accent" : "border-edge text-ink-2 hover:text-ink"}`}>
-                {m} dk
-              </button>
-            ))}
-          </div>
-
-          <div className="grid items-center gap-3 rounded-lg bg-canvas p-4 sm:grid-cols-[1fr_auto_1fr_auto_1.3fr]">
-            <div className="flex flex-col">
-              <span className="text-[26px] font-semibold tabular-nums">{fmtNum(T.incidents)}</span>
-              <span className="text-[12.5px] text-ink-2">olay (30 gün)</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-0.5 rounded-lg bg-canvas p-4">
+              <span className="text-[12px] font-semibold tracking-wider text-ink-3 uppercase">Ölçülen</span>
+              <span className="text-[24px] font-semibold tabular-nums">{T.open_hours.toLocaleString("tr-TR")} saat</span>
+              <span className="text-[13px] text-ink-2">olayların toplam açık kalma süresi, {T.open_hours_offhours.toLocaleString("tr-TR")} saati mesai dışında</span>
             </div>
-            <span className="text-xl text-ink-3" aria-hidden>×</span>
-            <div className="flex flex-col">
-              <span className="text-[26px] font-semibold tabular-nums">{minutes} dk</span>
-              <span className="text-[12.5px] text-ink-2">olay başına</span>
-            </div>
-            <span className="text-xl text-ink-3" aria-hidden>=</span>
-            <div className="flex flex-col">
-              <span className="text-[26px] font-semibold tabular-nums text-accent">≈ {fmtNum(hours)} saat</span>
-              <span className="text-[12.5px] text-ink-2">yaklaşık {(hours / 8).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} iş günü (8 saatlik)</span>
+            <div className="flex flex-col gap-0.5 rounded-lg bg-canvas p-4">
+              <span className="text-[12px] font-semibold tracking-wider text-ink-3 uppercase">Tahmini emek</span>
+              <span className="text-[24px] font-semibold tabular-nums text-accent">≈ {fmtNum(hours)} saat</span>
+              <span className="text-[13px] text-ink-2">yaklaşık {(hours / 8).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} iş günü (8 saatlik), aşağıdaki tabloya göre</span>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <div className="flex h-3 w-full overflow-hidden rounded-full bg-edge-soft">
-              <span className="h-full bg-good" style={{ width: `${hours ? (avoidHours / hours) * 100 : 0}%` }} />
-              <span className="h-full bg-ink-3/50" style={{ width: `${hours ? ((hours - avoidHours) / hours) * 100 : 0}%` }} />
-            </div>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13.5px]">
-              <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-good" />
-                <span><b className="font-semibold">{fmtNum(avoidHours)} saat</b> <span className="text-ink-2">bilinen sorunlu kurallardan ({fmtNum(T.preventable)} olay). Kurallar düzeltilirse bu zaman geri kazanılır.</span></span>
-              </span>
-              <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-ink-3/50" />
-                <span><b className="font-semibold">{fmtNum(Math.round(hours) - Math.round(avoidHours))} saat</b> <span className="text-ink-2">diğer olaylar ({fmtNum(T.incidents - T.preventable)} olay)</span></span>
-              </span>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-[13.5px]">
+              <thead><tr>
+                <th className={th}>Olay türü</th><th className={thr}>Olay sayısı</th><th className={thr}>Olay başına emek</th><th className={thr}>Toplam</th><th className={thr}>Bilinen gürültüden</th>
+              </tr></thead>
+              <tbody className="divide-y divide-edge-soft">
+                {rows.map((r) => (
+                  <tr key={r.key}>
+                    <td className={td}><div className="font-medium">{r.label}</div><div className="text-[12px] text-ink-3">{r.hint}</div></td>
+                    <td className={tdn}>{fmtNum(r.incidents)}</td>
+                    <td className={td + " text-right"}>
+                      <label className="inline-flex items-center gap-1.5">
+                        <span className="sr-only">{r.label} için dakika</span>
+                        <input id={`effort-${r.key}`} type="number" min={0} max={480} step={5} value={r.min}
+                          onChange={(e) => setMin(r.key, Number(e.target.value))}
+                          className="w-20 rounded-md border border-edge bg-canvas px-2 py-1 text-right font-mono text-[13px] tabular-nums" />
+                        <span className="text-ink-2">dk</span>
+                      </label>
+                    </td>
+                    <td className={tdn}>{fmtNum(r.hours)} sa</td>
+                    <td className={tdn}><span className="text-good">{fmtNum(r.avoid)} sa</span> <span className="text-ink-3">({fmtNum(r.preventable)} olay)</span></td>
+                  </tr>
+                ))}
+                <tr className="font-semibold">
+                  <td className={td}>Toplam</td><td className={tdn}>{fmtNum(T.incidents)}</td><td className={td} />
+                  <td className={tdn}>{fmtNum(hours)} sa</td><td className={tdn}><span className="text-good">{fmtNum(avoidHours)} sa</span></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+
+          <p className="text-[13.5px]">
+            Bilinen sorunlu kurallar düzeltilirse ayda yaklaşık <b className="font-semibold text-good">{fmtNum(avoidHours)} saat</b> geri kazanılır.
+          </p>
+          <p className="border-t border-edge-soft pt-3 text-[12.5px] text-ink-3">
+            Büyük ekipler bu emeği tahmin etmez, ölçer: nöbet aracı her olay için "kim üstlendi, ne zaman çözdü" bilgisini tutar.
+            Alert'ler şu an sadece Google Chat'e gittiği için bu bilgi yok; bir nöbet aracı bağlanırsa bu tablo gerçek ölçümle dolar.
+          </p>
         </Panel>
 
         <div className="grid gap-4 lg:grid-cols-2">

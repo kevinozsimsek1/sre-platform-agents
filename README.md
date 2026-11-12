@@ -106,6 +106,22 @@ GPU maliyeti kısmı için API'nin AWS'ye okuma yetkisiyle bağlanabilmesi lazı
 -e AWS_PROFILE=profil_adin -e HOME=/home/portal -v $HOME/.aws:/home/portal/.aws:ro
 ```
 
+## Servis hedefleri (SLO)
+
+Her servisin hedefi `api/slo-targets.toml` dosyasında. Hedefi servisin sahibi ekip belirler. Dosyada olmayan servislerde `[default]` kullanılır. Portal her servis için geçmiş performansına göre bir hedef de önerir, servis detay sayfasında dosyaya eklenecek satırlar hazır gelir.
+
+Örnek:
+
+```toml
+[services."plt-comm-workflow-manager"]
+latency_ms = 5000
+latency_target = 95.0
+owner = "Platform ekibi"
+note = "İş akışları uzun sürüyor, kullanıcı arka planda bekliyor."
+```
+
+Dosyayı değiştirdikten sonra API image'ını yeniden build edip deploy etmek yeterli.
+
 ## Denetim kaydı şifresi
 
 Denetim kaydı ekranı sadece admin içindir. Kullanıcı adı `root`. Şifreyi düz yazmıyoruz, hash'ini veriyoruz. Hash'i şöyle üretirsin:

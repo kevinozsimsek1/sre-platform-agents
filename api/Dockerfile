@@ -4,6 +4,7 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ app/
+COPY slo-targets.toml .
 RUN useradd -r -u 10001 portal && mkdir -p /data && chown portal /data
 USER 10001
 EXPOSE 8000
