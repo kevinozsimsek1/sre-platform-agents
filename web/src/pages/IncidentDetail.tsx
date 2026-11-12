@@ -8,7 +8,6 @@ import Investigate, { GuideNote } from "../components/Investigate";
 import AgentPanel from "../components/AgentPanel";
 import ChangeBatchCard from "../components/ChangeBatchCard";
 import { AssignPicker } from "../components/Team";
-import { RunbookText } from "../components/Runbook";
 import { Empty } from "../components/ui";
 import { ErrorBox, Loading, PageHeader, Panel, Pill, Section, Severity, Stat } from "../components/ui";
 
@@ -90,18 +89,6 @@ export default function IncidentDetail() {
           Bu olaydaki kuralların hepsinde bilinen bir sorun var (dalgalı, bozuk, zamanlı ya da kopya). Kural düzeltilirse bu tür olaylar büyük ihtimalle hiç oluşmaz.
           Önce kural sayfasındaki öneriye bak.
         </Panel>
-      )}
-
-      {Object.keys(d.runbooks).length > 0 && (
-        <Section title="Runbook" aside="Ekibin bu alert'ler için yazdığı adımlar">
-          {d.rules_detail.filter((r) => d.runbooks[r.key]).map((r) => (
-            <Panel key={r.key} className="flex flex-col gap-2 p-4">
-              {Object.keys(d.runbooks).length > 1 || d.rules_detail.length > 1
-                ? <Link to={`/alerts/${r.org}/${r.uid}`} className="text-[13px] font-semibold text-ink-2 hover:text-accent">{r.title}</Link> : null}
-              <RunbookText text={d.runbooks[r.key].text} />
-            </Panel>
-          ))}
-        </Section>
       )}
 
       <Section title="Zaman çizelgesi">

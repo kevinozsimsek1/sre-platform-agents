@@ -122,7 +122,7 @@ metadata:
   name: sre-portal-slo-targets
   namespace: mcp-llm-agent
 ---
-# Olay atamaları ve runbook'lar (portal kendisi doldurur; data yok ki apply mevcut veriyi silmesin)
+# Olay atamaları (portal kendisi doldurur; data yok ki apply mevcut veriyi silmesin)
 apiVersion: v1
 kind: ConfigMap
 metadata:

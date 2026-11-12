@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, FileSearch, Sparkles } from "lucide-react";
@@ -12,7 +13,7 @@ import { ErrorBox, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th,
 type Resp = {
   window_days: number; service: SloService | null;
   daily: { t: number; requests: number; availability: number | null; latency: number | null }[];
-  routes: { route: string; requests: number; errors_5xx: number; slow: number; p95_s: number | null; logs?: { all: string; errors: string } }[];
+  routes: { route: string; requests: number; errors_5xx: number; slow: number; p95_s: number | null; codes?: Record<string, number>; logs?: { all: string; errors: string } }[];
   logs: SloLogs | null;
   codes: { code: string; count: number }[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
@@ -53,9 +54,14 @@ function LogLink({ href, primary, children }: { href: string; primary?: boolean;
 export default function SloDetail() {
   const { service = "" } = useParams();
   const q = useQuery<Resp>({ queryKey: ["slo", service], queryFn: () => api(`/slo/${encodeURIComponent(service)}`) });
+  const [code, setCode] = useState<string | null>(null);
   if (q.isLoading) return <Loading label="Endpoint bazında hesaplanıyor" />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
   const d = q.data!;
+  const codeTone = (c: string) => (c.startsWith("5") ? "text-crit" : c.startsWith("4") ? "text-warn" : "");
+  const routes = code
+    ? d.routes.filter((r) => r.codes?.[code]).sort((a, b) => (b.codes![code] ?? 0) - (a.codes![code] ?? 0))
+    : d.routes.slice(0, 40);
   const s = d.service;
   const m = s?.measured;
   const t = s?.target;
@@ -119,26 +125,42 @@ export default function SloDetail() {
         </Panel>
       )}
 
-      <Section title="Hangi endpoint'ler yavaş ya da hatalı" aside="Önce hata, sonra yavaş istek sayısına göre · p95 son 7 gün">
+      <Section title="Hangi endpoint'ler yavaş ya da hatalı"
+        aside={code ? `Sadece ${code} dönen endpoint'ler, ${code} sayısına göre` : "Önce hata, sonra yavaş istek sayısına göre · p95 son 7 gün"}>
+        <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
+          <span className="text-ink-3">Durum kodu ({d.window_days} gün), basınca süzer:</span>
+          {d.codes.filter((c) => c.count > 0).map((c) => {
+            const on = code === c.code;
+            return (
+              <button key={c.code} type="button" aria-pressed={on} onClick={() => setCode(on ? null : c.code)}
+                className={`rounded border px-2 py-0.5 font-mono transition-colors ${on ? "border-accent bg-accent-soft text-ink" : "border-edge bg-panel hover:border-accent"}`}>
+                <b className={codeTone(c.code)}>{c.code}</b> {fmtNum(c.count)}
+              </button>
+            );
+          })}
+          {code && <button type="button" onClick={() => setCode(null)} className="text-accent hover:underline">Temizle</button>}
+        </div>
         <Panel className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-[13.5px]">
-            <thead><tr><th className={th}>Endpoint</th><th className={thr}>İstek</th><th className={thr}>5xx</th><th className={thr}>Yavaş</th><th className={thr}>Yavaş oranı</th><th className={thr}>p95</th>{d.logs && <th className={th}>Log</th>}</tr></thead>
+            <thead><tr><th className={th}>Endpoint</th><th className={thr}>İstek</th>{code ? <th className={thr}>{code}</th> : <th className={thr}>5xx</th>}<th className={thr}>Yavaş</th><th className={thr}>Yavaş oranı</th><th className={thr}>p95</th>{d.logs && <th className={th}>Log</th>}</tr></thead>
             <tbody className="divide-y divide-edge-soft">
-              {d.routes.map((r) => {
+              {routes.map((r) => {
                 const slowPct = r.requests ? r.slow / r.requests : 0;
                 return (
                   <tr key={r.route}>
                     <td className={td + " font-mono text-[12.5px] break-all"}>{r.route}</td>
                     <td className={tdn}>{fmtNum(r.requests)}</td>
-                    <td className={tdn}>{r.errors_5xx ? <span className="text-crit">{r.errors_5xx}</span> : <span className="text-ink-3">0</span>}</td>
+                    {code
+                      ? <td className={tdn}><span className={codeTone(code) || "text-ink"}>{fmtNum(r.codes?.[code])}</span> <span className="text-ink-3">({fmtPct((r.codes?.[code] ?? 0) / Math.max(r.requests, 1), 1)})</span></td>
+                      : <td className={tdn}>{r.errors_5xx ? <span className="text-crit">{r.errors_5xx}</span> : <span className="text-ink-3">0</span>}</td>}
                     <td className={tdn}>{fmtNum(r.slow)}</td>
                     <td className={tdn}><span className={slowPct > 0.05 ? "text-warn" : ""}>{fmtPct(slowPct, 1)}</span></td>
                     <td className={tdn}><span className={t && (r.p95_s ?? 0) * 1000 > t.latency_ms ? "text-warn" : ""}>{r.p95_s != null ? `${fmtNum(r.p95_s * 1000)} ms` : "—"}</span></td>
                     {d.logs && (
                       <td className={td + " whitespace-nowrap text-[12.5px]"}>
                         {r.logs && <>
-                          <a href={r.errors_5xx ? r.logs.errors : r.logs.all} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-                            {r.errors_5xx ? "hatalar" : "loglar"} <ExternalLink size={11} />
+                          <a href={r.errors_5xx || (code && /^[45]/.test(code)) ? r.logs.errors : r.logs.all} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+                            {r.errors_5xx || (code && /^[45]/.test(code)) ? "hatalar" : "loglar"} <ExternalLink size={11} />
                           </a>
                           {r.errors_5xx > 0 && <a href={r.logs.all} target="_blank" rel="noreferrer" className="ml-2 text-ink-3 hover:text-ink">tümü</a>}
                         </>}
@@ -149,12 +171,8 @@ export default function SloDetail() {
               })}
             </tbody>
           </table>
+          {routes.length === 0 && <p className="p-4 text-[13.5px] text-ink-3">Bu kodu dönen endpoint yok.</p>}
         </Panel>
-        <div className="flex flex-wrap gap-2 text-[12.5px] text-ink-2">
-          {d.codes.filter((c) => c.count > 0).map((c) => (
-            <span key={c.code} className="rounded border border-edge bg-panel px-2 py-0.5 font-mono"><b className={c.code.startsWith("5") ? "text-crit" : c.code.startsWith("4") ? "text-warn" : ""}>{c.code}</b> {fmtNum(c.count)}</span>
-          ))}
-        </div>
       </Section>
 
       <div id="agent" className="scroll-mt-6">

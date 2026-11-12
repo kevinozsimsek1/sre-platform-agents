@@ -1,18 +1,19 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BellRing, Bot, Gauge, GitCommitHorizontal, LockKeyhole, Search, Siren, Target, Wallet, Boxes } from "lucide-react";
+import { BellRing, Bot, Gauge, GitCommitHorizontal, LockKeyhole, Search, Siren, Target, Wallet, Boxes, UsersRound } from "lucide-react";
 import { api } from "../lib/api";
 import { track } from "../lib/audit";
 import CommandPalette from "./CommandPalette";
 import { applyTheme, getTheme, type Theme } from "../lib/theme";
 
-type NavItem = { to: string; label: string; icon: ReactNode; badge?: "firing" | "open" | "slo" };
+type NavItem = { to: string; label: string; icon: ReactNode; badge?: "firing" | "open" | "slo" | "unassigned" };
 
 const NAV: NavItem[] = [
   { to: "/", label: "Genel bakış", icon: <Gauge size={16} /> },
   { to: "/alerts", label: "Gelen alert'ler", icon: <BellRing size={16} />, badge: "firing" },
   { to: "/incidents", label: "Olaylar ve analiz", icon: <Siren size={16} />, badge: "open" },
+  { to: "/work", label: "Atanan işler", icon: <UsersRound size={16} />, badge: "unassigned" },
   { to: "/changes", label: "Değişiklikler", icon: <GitCommitHorizontal size={16} /> },
   { to: "/cluster", label: "Cluster durumu", icon: <Boxes size={16} /> },
   { to: "/slo", label: "Servis hedefleri (SLO)", icon: <Target size={16} />, badge: "slo" },
@@ -57,7 +58,7 @@ function ThemePicker() {
   );
 }
 
-type Counts = { firing: { severity: string | null }[]; incidents_24h: { ongoing: boolean }[]; slo: { breached: number } };
+type Counts = { firing: { severity: string | null }[]; incidents_24h: { ongoing: boolean; assignee?: unknown }[]; slo: { breached: number } };
 
 /** Menüdeki sayaçlar: şu an alarmdaki kural, açık olay ve SLO'su aşılan servis sayısı. */
 function useBadges() {
@@ -67,6 +68,7 @@ function useBadges() {
     firing: { n: q.data.firing.length, crit: q.data.firing.some((f) => f.severity === "critical"), title: "şu an alarmdaki kural" },
     open: { n: q.data.incidents_24h.filter((i) => i.ongoing).length, crit: true, title: "açık olay" },
     slo: { n: q.data.slo.breached, crit: true, title: "SLO hedefini aşan servis" },
+    unassigned: { n: q.data.incidents_24h.filter((i) => i.ongoing && !i.assignee).length, crit: false, title: "kimseye atanmamış açık olay" },
   } as Record<string, { n: number; crit: boolean; title: string }>;
 }
 

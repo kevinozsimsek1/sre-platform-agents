@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserRound } from "lucide-react";
+import { Check, RotateCcw, UserRound } from "lucide-react";
 import { api, put } from "../lib/api";
 import type { Assignee } from "../lib/types";
 import { ago } from "../lib/format";
@@ -21,13 +21,29 @@ export function AssigneeTag({ a }: { a?: Assignee | null }) {
   );
 }
 
+export function refreshWork(qc: ReturnType<typeof useQueryClient>) {
+  ["incidents", "incident", "overview", "team-work"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+}
+
+/** Atanan işi tamamlandı olarak işaretle ya da geri aç. */
+export function DoneButton({ iid, done }: { iid: string; done: boolean }) {
+  const qc = useQueryClient();
+  const m = useMutation({ mutationFn: () => put(`/incidents/${iid}/done`, { done: !done }), onSuccess: () => refreshWork(qc) });
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); m.mutate(); }} disabled={m.isPending}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[12.5px] disabled:opacity-60 ${done ? "border-edge text-ink-3 hover:text-ink" : "border-good/40 bg-good-soft text-good hover:border-good"}`}>
+      {done ? <><RotateCcw size={12} /> Geri aç</> : <><Check size={12} /> Tamamlandı</>}
+    </button>
+  );
+}
+
 /** Olayı ekipten birine ata. Liste SRE_TEAM ayarından gelir; boşsa hiç görünmez. */
 export function AssignPicker({ iid, a, compact = false }: { iid: string; a?: Assignee | null; compact?: boolean }) {
   const team = useTeam();
   const qc = useQueryClient();
   const m = useMutation({
     mutationFn: (to: string | null) => put(`/incidents/${iid}/assignee`, { to }),
-    onSuccess: () => ["incidents", "incident", "overview"].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
+    onSuccess: () => refreshWork(qc),
   });
   if (!team.length) return null;
   const value = m.isPending ? (m.variables ?? "") : (a?.to ?? "");
@@ -45,6 +61,7 @@ export function AssignPicker({ iid, a, compact = false }: { iid: string; a?: Ass
         {team.map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
       {!compact && a && !m.isPending && <span className="text-[12px] text-ink-3">{ago(a.at)}</span>}
+      {!compact && a && !m.isPending && <DoneButton iid={iid} done={!!a.done_at} />}
       {m.error && <span className="text-[12px] text-crit">{(m.error as Error).message}</span>}
     </label>
   );

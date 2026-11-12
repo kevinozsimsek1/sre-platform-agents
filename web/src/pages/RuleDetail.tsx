@@ -70,7 +70,7 @@ export default function RuleDetail() {
         <Stat value={fmtNum(r.nearmiss)} label="eşiğe gelip geri dönen (pending→normal)" />
       </div>
 
-      <RunbookPanel key={`${org}:${uid}:${d.runbook?.at ?? 0}`} ruleKey={`${org}:${uid}`} rb={d.runbook} />
+      <RunbookPanel d={d} />
 
       {d.findings.length > 0 && (
         <Section title="Bulgular">

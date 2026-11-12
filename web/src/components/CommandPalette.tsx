@@ -13,6 +13,7 @@ const PAGES: Item[] = [
   { to: "/alerts", label: "Gelen alert'ler" },
   { to: "/incidents", label: "Olaylar ve analiz" },
   { to: "/changes", label: "Değişiklikler (deploy ve restart)" },
+  { to: "/work", label: "Atanan işler (kimde ne var)" },
   { to: "/cluster", label: "Cluster durumu (pod, node, sertifika, disk)" },
   { to: "/slo", label: "Servis hedefleri (SLO)" },
   { to: "/value", label: "Maliyet ve değer" },

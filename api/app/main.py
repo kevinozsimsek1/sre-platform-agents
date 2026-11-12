@@ -149,29 +149,8 @@ async def rule(org: int, uid: str) -> dict:
     if not d:
         raise HTTPException(404, "Kural bulunamadı")
     r = (await model()).rules[f"{org}:{uid}"]
-    rb = (await team.runbooks()).get(f"{org}:{uid}")
     return {**d, "analysis": agents.for_target(f"rule:{org}:{uid}"), "agents": agents.registry(),
-            "agent_suggestion": agents.recommend(analysis.signals(await model(), r)), "runbook": rb}
-
-
-class RunbookReq(BaseModel):
-    text: str = Field("", max_length=team.RUNBOOK_MAX)
-
-
-@api.put("/alerts/rules/{org}/{uid}/runbook")
-async def rule_runbook(org: int, uid: str, req: RunbookReq, request: Request) -> dict:
-    key = f"{org}:{uid}"
-    m = await model()
-    if key not in m.rules:
-        raise HTTPException(404, "Kural bulunamadı")
-    before = (await team.runbooks()).get(key)
-    try:
-        rb = await team.set_runbook(key, req.text)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    await audit.write({"kind": "team", "action": "runbook_changed", "target": m.rules[key].title,
-                       "detail": f"{len((before or {}).get('text', ''))} → {len(req.text.strip())} karakter", **audit.who(request)})
-    return {"runbook": rb}
+            "agent_suggestion": agents.recommend(analysis.signals(await model(), r))}
 
 
 @api.get("/alerts/rules/{org}/{uid}/investigate")
@@ -210,10 +189,9 @@ async def incident(iid: str) -> dict:
     m = await model()
     sig = [x for k in d["rules"] for x in analysis.signals(m, m.rules[k["key"]])]
     inc = next(i for i in m.incidents if i["id"] == iid)
-    asg, rbs = await asyncio.gather(team.assignments(), team.runbooks())
+    asg = await team.assignments()
     return {**d, "analysis": agents.for_incident(iid), "agents": agents.registry(), "agent_suggestion": agents.recommend(sig),
-            "changes": _inc_changes(await changes_or_empty(), inc), "assignee": asg.get(iid),
-            "runbooks": {k["key"]: rbs[k["key"]] for k in d["rules"] if k["key"] in rbs}}
+            "changes": _inc_changes(await changes_or_empty(), inc), "assignee": asg.get(iid)}
 
 
 class AssignReq(BaseModel):
@@ -228,12 +206,33 @@ async def incident_assign(iid: str, req: AssignReq, request: Request) -> dict:
         raise HTTPException(404, "Olay bulunamadı")
     before = (await team.assignments()).get(iid)
     try:
-        a = await team.assign(iid, req.to)
+        a = await team.assign(iid, req.to, inc)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     await audit.write({"kind": "team", "action": "incident_assigned", "target": iid,
                        "detail": f"{(before or {}).get('to') or 'kimse'} → {req.to or 'kimse'} · {inc['rules'][0]['title']}", **audit.who(request)})
     return {"assignee": a}
+
+
+class DoneReq(BaseModel):
+    done: bool
+
+
+@api.put("/incidents/{iid}/done")
+async def incident_done(iid: str, req: DoneReq, request: Request) -> dict:
+    try:
+        a = await team.set_done(iid, req.done)
+    except KeyError as e:
+        raise HTTPException(404, "Bu olay kimseye atanmamış") from e
+    await audit.write({"kind": "team", "action": "work_done" if req.done else "work_reopened", "target": iid,
+                       "detail": f"{a.get('to')} · {a.get('title')}", **audit.who(request)})
+    return {"assignee": a}
+
+
+@api.get("/team/work")
+async def team_work() -> dict:
+    m = await model()
+    return {"fetched_at": m.fetched_at, **team.work(await team.assignments(), m.incidents)}
 
 
 @api.get("/cluster")

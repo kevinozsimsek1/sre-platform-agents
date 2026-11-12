@@ -233,7 +233,7 @@ async def service_detail(svc: str) -> dict:
         daily(f"sum(increase({M}_count{_sel(f + ',' + FIVEXX)}[1d]))"),
         daily(f"sum(increase({M}_bucket{_sel(f + ',' + le_sel)}[1d]))"),
         _window(f"{config.WINDOW_DAYS}d", svc, by="http_route"),
-        grafana.prom(f"sum by (http_response_status_code) (increase({M}_count{_sel(f)}[{config.WINDOW_DAYS}d]))"),
+        grafana.prom(f"sum by (http_route, http_response_status_code) (increase({M}_count{_sel(f)}[{config.WINDOW_DAYS}d]))"),
         grafana.prom(f"histogram_quantile(0.95, sum by (le, http_route) (rate({M}_bucket{_sel(f)}[7d])))"),
     )
     days = []
@@ -243,22 +243,32 @@ async def service_detail(svc: str) -> dict:
                      "availability": (1 - bad_d.get(ts, 0) / tot) if tot > 0 else None,
                      "latency": min(1.0, fast_d.get(ts, 0) / tot) if tot > 0 else None})
     p95m = {r["metric"].get("http_route"): float(r["value"][1]) for r in p95 if r["value"][1] not in ("NaN", "+Inf")}
+    # durum kodu: endpoint bazında ve toplam (ekranda koda basınca o kodu dönen endpoint'ler süzülür)
+    by_route: dict[str, dict[str, int]] = {}
+    totals: dict[str, int] = {}
+    for r in codes:
+        n = int(round(float(r["value"][1])))
+        if n <= 0:
+            continue
+        c, rt = r["metric"].get("http_response_status_code", ""), r["metric"].get("http_route", "")
+        by_route.setdefault(rt, {})[c] = n
+        totals[c] = totals.get(c, 0) + n
     rows = []
     for k, w in routes.items():
         if w["total"] < 1:
             continue
         fast = _fast(w, t["latency_ms"])
         rows.append({"route": k, "requests": int(w["total"]), "errors_5xx": int(w["bad"]), "slow": int(max(0, w["total"] - fast)),
-                     "p95_s": p95m.get(k)})
+                     "p95_s": p95m.get(k), "codes": by_route.get(k, {})})
     rows.sort(key=lambda r: (-r["errors_5xx"], -r["slow"], -r["requests"]))
     ov = await overview()
     me = next((s for s in ov["services"] if s["service"] == svc), None)
     group = await log_group_for(svc)
-    rows = rows[:40]
+    rows = rows[:300]  # ekranda ilk 40 gösterilir; durum koduna basınca hepsi içinden süzülür
     if group:
         for r in rows:
             r["logs"] = investigate.service_logs(group, r["route"])
     return {"fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS,
             "service": me, "daily": days, "routes": rows,
             "logs": investigate.service_logs(group) if group else None,
-            "codes": sorted(({"code": r["metric"].get("http_response_status_code"), "count": int(float(r["value"][1]))} for r in codes), key=lambda c: c["code"] or "")}
+            "codes": [{"code": c, "count": n} for c, n in sorted(totals.items())]}

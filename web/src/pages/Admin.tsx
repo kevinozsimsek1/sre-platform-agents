@@ -32,7 +32,8 @@ const ACTIONS: Record<string, string> = {
   login_blocked: "Çok fazla hatalı deneme, engellendi",
   slo_target_changed: "Servis hedefini değiştirdi",
   incident_assigned: "Olayı atadı",
-  runbook_changed: "Runbook'u değiştirdi",
+  work_done: "İşi tamamlandı yaptı",
+  work_reopened: "İşi geri açtı",
 };
 
 function browser(ua: string): string {

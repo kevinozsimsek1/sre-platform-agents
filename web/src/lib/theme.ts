@@ -3,7 +3,10 @@ export type Theme = "system" | "light" | "dark" | "blue";
 const KEY = "sre-portal:theme";
 
 export function getTheme(): Theme {
-  try { return (localStorage.getItem(KEY) as Theme) || "system"; } catch { return "system"; }
+  try {
+    const t = localStorage.getItem(KEY) as Theme;
+    return ["light", "dark", "blue"].includes(t) ? t : "system";
+  } catch { return "system"; }
 }
 
 export function applyTheme(t: Theme) {

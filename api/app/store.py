@@ -1,4 +1,4 @@
-"""Küçük, kalıcı JSON belgeleri: olay atamaları, alert runbook'ları.
+"""Küçük, kalıcı JSON belgeleri: olay atamaları.
 
   - Cluster'da: STATE_CONFIGMAP adlı ConfigMap'in içinde her belge ayrı bir anahtar (pod sadece bu ConfigMap'i okuyup yazabilir)
   - Lokalde: DATA_DIR/<ad>.json

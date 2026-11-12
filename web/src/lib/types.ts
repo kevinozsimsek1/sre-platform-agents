@@ -31,8 +31,13 @@ export type Incident = {
   rules: RuleRef[]; episodes: number; series: number; offhours: boolean; night: boolean; preventable: boolean; analyses?: number;
   after_change?: boolean; after_related_change?: boolean; assignee?: Assignee | null;
 };
-export type Assignee = { to: string; at: number };
-export type Runbook = { text: string; at: number };
+export type Assignee = { to: string; at: number; done_at?: number | null; title?: string; more?: number; severity?: string | null; start?: number | null };
+export type WorkItem = Assignee & { id: string; known: boolean; ongoing: boolean; minutes: number | null; end: number | null };
+export type Work = {
+  fetched_at: number;
+  people: { name: string; open: WorkItem[]; done: WorkItem[]; done_total: number }[];
+  unassigned: { id: string; title: string; more: number; severity: string; start: number; ongoing: boolean; minutes: number }[];
+};
 
 export type AgentInfo = { id: string; label: string; description: string };
 export type AgentState = { items: any[]; running: { agent: string; started: number } | null };
@@ -55,7 +60,6 @@ export type RuleDetail = {
   incidents: Incident[];
   investigate: GuideItem[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
-  runbook: Runbook | null;
 };
 
 export type IncidentDetail = Incident & {
@@ -66,7 +70,6 @@ export type IncidentDetail = Incident & {
   investigate: { rule: string; key: string; guide: GuideItem[] }[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
   changes: ChangeBatch[];
-  runbooks: Record<string, Runbook>;
 };
 
 export type SloTarget = { availability: number; latency_ms: number; latency_target: number; source: "tanımlı" | "varsayılan"; owner: string | null; note: string | null; approx: boolean };
