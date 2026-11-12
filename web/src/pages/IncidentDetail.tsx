@@ -6,6 +6,8 @@ import type { IncidentDetail as ID } from "../lib/types";
 import { fmtDateTime, fmtFull, fmtMin, fmtTime } from "../lib/format";
 import Investigate, { GuideNote } from "../components/Investigate";
 import AgentPanel from "../components/AgentPanel";
+import ChangeBatchCard from "../components/ChangeBatchCard";
+import { Empty } from "../components/ui";
 import { ErrorBox, Loading, PageHeader, Panel, Pill, Section, Severity, Stat } from "../components/ui";
 
 /** Olaydaki alert'lerin zaman çizelgesi (gantt). */
@@ -89,6 +91,17 @@ export default function IncidentDetail() {
 
       <Section title="Zaman çizelgesi">
         <Timeline d={d} />
+      </Section>
+
+      <Section title="Olaydan önce ne değişti" aside={<Link to="/changes" className="text-accent">Tüm değişiklikler</Link>}>
+        {d.changes.length === 0 ? (
+          <Empty>Olaydan önceki 60 dakikada prod'da deploy ya da yeniden başlatma yok. Sebep büyük ihtimalle bir değişiklik değil; yük, bağımlılık ya da altyapı tarafına bak.</Empty>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {d.changes.map((b) => <ChangeBatchCard key={b.id} b={b} showIncidents={false} />)}
+            <p className="text-[12.5px] text-ink-3">"Olayla ilgili servis" işareti, değişen deployment'ın adı ya da namespace'i olaydaki alert'lerle eşleşiyorsa çıkar. Eşleşme yoksa değişiklik aynı zamanda olmuş ama doğrudan ilişkisi kanıtlanmamıştır.</p>
+          </div>
+        )}
       </Section>
 
       <div id="agent" className="scroll-mt-6">

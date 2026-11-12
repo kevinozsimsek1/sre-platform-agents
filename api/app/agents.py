@@ -124,6 +124,11 @@ def build_prompt(inc: dict) -> str:
     for e in inc["timeline"][:40]:
         end = f"{local(e['end']):%H:%M}" if e["end"] else "açık"
         lines.append(f"- {e['rule']['title']} · {e['series']} · {local(e['start']):%H:%M} → {end} · {e['value']}")
+    if inc.get("changes"):
+        lines += ["", "Olaydan önceki 60 dakikada prod'da yapılan değişiklikler (deploy / yeniden başlatma):"]
+        for b in inc["changes"][:5]:
+            names = ", ".join(f"{i['namespace']}/{i['deployment']} ({'yeni sürüm ' + str(i['version']) if i['kind'] == 'release' else 'yeniden başlatma'})" for i in b["items"][:8])
+            lines.append(f"- olaydan {b['minutes_before']} dk önce, {b['deployments']} deployment: {names}")
     if inc["findings"]:
         lines += ["", "Portalın bu kurallar hakkındaki bulguları:"]
         lines += [f"- {f['rule']}: {f['title']}" for f in inc["findings"]]

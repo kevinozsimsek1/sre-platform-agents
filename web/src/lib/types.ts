@@ -29,6 +29,7 @@ export type Episode = { start: number; end: number | null; minutes: number; seri
 export type Incident = {
   id: string; start: number; end: number | null; ongoing: boolean; minutes: number; severity: "critical" | "warning" | "none";
   rules: RuleRef[]; episodes: number; series: number; offhours: boolean; night: boolean; preventable: boolean; analyses?: number;
+  after_change?: boolean; after_related_change?: boolean;
 };
 
 export type AgentInfo = { id: string; label: string; description: string };
@@ -61,6 +62,7 @@ export type IncidentDetail = Incident & {
   rules_detail: (RuleRow & { queries: Query[]; annotations: Record<string, string> })[];
   investigate: { rule: string; key: string; guide: GuideItem[] }[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
+  changes: ChangeBatch[];
 };
 
 export type SloService = {
@@ -71,3 +73,16 @@ export type SloService = {
   burn_1d: { availability: number | null; latency: number | null };
 };
 export type Objectives = { availability: number; latency: number; latency_le_s: number; window_days: number; min_requests: number };
+
+export type ChangeItem = { namespace: string; deployment: string; kind: "release" | "restart" | "unknown"; version: string | null; prev_version: string | null; t_ms: number };
+export type ChangeBatch = {
+  id: string; start: number; end: number; deployments: number; releases: number; restarts: number; mass: boolean;
+  items: ChangeItem[]; incidents_after?: Incident[]; minutes_before?: number; related?: boolean;
+};
+export type Changes = {
+  fetched_at: number;
+  stats: { releases: number; restarts: number; batches: number; mass: number; deployments: number };
+  batches: ChangeBatch[];
+  schedules: { time: string; deployments: number; days: number; names: string[] }[];
+  correlation: { incidents: number; after_change: number; since: number | null };
+};

@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import agents, analysis, audit, config, gpu, slo
+from . import agents, analysis, audit, changes, config, gpu, slo
 from .cache import cached
 from .grafana import GrafanaError
 
@@ -23,7 +23,7 @@ async def _keep_warm() -> None:
     Önbellek süresi dolmadan yenilendiği için istekler hep hazır veriyi görür."""
     while True:
         jobs = (("alert verisi", lambda: model(True)), ("SLO", lambda: slo_overview(True)),
-                ("GPU", lambda: cached("gpu", 300, gpu.overview, True)))
+                ("değişiklikler", lambda: changes_data(True)), ("GPU", lambda: cached("gpu", 300, gpu.overview, True)))
         for name, job in jobs:
             try:
                 await job()
@@ -83,6 +83,25 @@ async def slo_detail(service: str) -> dict:
         return await cached(f"slo:{service}", 600, lambda: slo.service_detail(service))
     except GrafanaError as exc:
         raise HTTPException(502, f"Prometheus'tan veri alınamadı: {exc}") from exc
+
+
+async def changes_data(force: bool = False) -> dict:
+    try:
+        return await cached("changes", config.CACHE_TTL, changes.collect, force)
+    except GrafanaError as exc:
+        raise HTTPException(502, f"Değişiklik verisi alınamadı: {exc}") from exc
+
+
+async def changes_or_empty() -> dict:
+    try:
+        return await changes_data()
+    except HTTPException:
+        return {"batches": []}
+
+
+def _inc_changes(ch: dict, i: dict) -> list[dict]:
+    labels = [e.labels for e in i["_eps"]]
+    return changes.for_incident(ch, i["start"], labels, [r["title"] for r in i["rules"]])
 
 
 @api.get("/health")
@@ -147,10 +166,16 @@ async def rule_investigate(org: int, uid: str, start: int, end: int | None = Non
 
 @api.get("/incidents")
 async def incidents(refresh: bool = False) -> dict:
-    out = analysis.incidents_list(await model(refresh))
+    m = await model(refresh)
+    ch = await changes_or_empty()
+    out = analysis.incidents_list(m)
     store = agents._load()
+    by_id = {i["id"]: i for i in m.incidents}
     for i in out["items"]:
         i["analyses"] = len(store.get(f"incident:{i['id']}", []))
+        found = _inc_changes(ch, by_id[i["id"]])
+        i["after_change"] = bool(found)
+        i["after_related_change"] = any(c["related"] for c in found)
     return out
 
 
@@ -161,7 +186,23 @@ async def incident(iid: str) -> dict:
         raise HTTPException(404, "Olay bulunamadı (son 30 günün dışında kalmış olabilir)")
     m = await model()
     sig = [x for k in d["rules"] for x in analysis.signals(m, m.rules[k["key"]])]
-    return {**d, "analysis": agents.for_incident(iid), "agents": agents.registry(), "agent_suggestion": agents.recommend(sig)}
+    inc = next(i for i in m.incidents if i["id"] == iid)
+    return {**d, "analysis": agents.for_incident(iid), "agents": agents.registry(), "agent_suggestion": agents.recommend(sig),
+            "changes": _inc_changes(await changes_or_empty(), inc)}
+
+
+@api.get("/changes")
+async def changes_list(refresh: bool = False) -> dict:
+    m, ch = await asyncio.gather(model(), changes_data(refresh))
+    after = changes.incidents_after(ch, m.incidents)
+    inc_by_id = {i["id"]: analysis.inc_row(i) for i in m.incidents}
+    batches = [{**b, "incidents_after": [inc_by_id[x] for x in after.get(b["id"], []) if x in inc_by_id][:10]} for b in ch["batches"]]
+    with_change = sum(1 for i in m.incidents if _inc_changes(ch, i))
+    oldest = min((b["start"] for b in ch["batches"]), default=None)
+    covered = [i for i in m.incidents if oldest and i["start"] >= oldest]
+    return {**ch, "batches": batches,
+            "correlation": {"incidents": len(covered), "after_change": sum(1 for i in covered if _inc_changes(ch, i)), "since": oldest,
+                            "all_after_change": with_change}}
 
 
 @api.get("/slo")
@@ -201,6 +242,9 @@ async def investigate(req: InvestigateReq, request: Request, bg: BackgroundTasks
     m = await model()
     if req.kind == "incident":
         d = analysis.incident_detail(m, req.ref)
+        if d:
+            inc = next(i for i in m.incidents if i["id"] == req.ref)
+            d["changes"] = _inc_changes(await changes_or_empty(), inc)
         prompt = agents.build_prompt(d) if d else None
     elif req.kind == "rule":
         d = analysis.rule_detail(m, req.ref)

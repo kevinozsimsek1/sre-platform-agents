@@ -12,6 +12,7 @@ const PAGES: Item[] = [
   { to: "/", label: "Genel bakış" },
   { to: "/alerts", label: "Gelen alert'ler" },
   { to: "/incidents", label: "Olaylar ve analiz" },
+  { to: "/changes", label: "Değişiklikler (deploy ve restart)" },
   { to: "/slo", label: "SLO ve hata bütçesi" },
   { to: "/value", label: "Maliyet ve değer" },
   { to: "/admin", label: "Denetim kaydı" },

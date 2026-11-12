@@ -1,6 +1,6 @@
 # SRE Portal
 
-Prod'daki alertleri, olayları, SLO'ları ve nöbet yükünü tek yerden görmek için yaptığımız portal. Veriyi Grafana'dan okuyor, hiçbir şeyi değiştirmiyor. Alertlere tıklayınca nereye bakman gerektiği linkleriyle geliyor, istersen agent'a da araştırtabiliyorsun.
+Prod'daki alertleri, olayları, deploy'ları, SLO'ları ve nöbet yükünü tek yerden görmek için yaptığımız portal. Veriyi Grafana'dan okuyor, hiçbir şeyi değiştirmiyor. Alertlere tıklayınca nereye bakman gerektiği linkleriyle geliyor, istersen agent'a da araştırtabiliyorsun.
 
 İki parçası var:
 

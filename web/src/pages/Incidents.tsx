@@ -84,6 +84,7 @@ export default function Incidents() {
                 <td className={td}>
                   <div className="flex flex-wrap gap-1">
                     {i.night ? <Pill tone="warn">gece</Pill> : i.offhours ? <Pill tone="mute">mesai dışı</Pill> : null}
+                    {i.after_related_change ? <Pill tone="crit">ilgili deploy sonrası</Pill> : i.after_change ? <Pill tone="warn">değişiklik sonrası</Pill> : null}
                     {i.preventable && <Pill tone="mute">bilinen gürültü</Pill>}
                     {!!i.analyses && <Pill tone="accent">{i.analyses} analiz</Pill>}
                   </div>

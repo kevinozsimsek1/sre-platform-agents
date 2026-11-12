@@ -22,6 +22,7 @@ const IncidentDetail = lazy(() => import("./pages/IncidentDetail"));
 const Slo = lazy(() => import("./pages/Slo"));
 const SloDetail = lazy(() => import("./pages/SloDetail"));
 const Value = lazy(() => import("./pages/Value"));
+const Changes = lazy(() => import("./pages/Changes"));
 const Admin = lazy(() => import("./pages/Admin"));
 
 applyTheme(getTheme());
@@ -47,6 +48,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="slo" element={<Slo />} />
               <Route path="slo/:service" element={<SloDetail />} />
               <Route path="value" element={<Value />} />
+              <Route path="changes" element={<Changes />} />
               <Route path="admin" element={<Admin />} />
               <Route path="gelen-alertler" element={<Navigate to="/alerts" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
