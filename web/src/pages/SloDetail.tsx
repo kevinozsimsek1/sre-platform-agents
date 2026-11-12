@@ -1,17 +1,16 @@
-import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, Sparkles } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
 import type { AgentInfo, AgentState, SloService } from "../lib/types";
 import { fmtDate, fmtNum, fmtPct } from "../lib/format";
 import AgentPanel from "../components/AgentPanel";
 import { STATUS, SourcePill, TargetText, Trend } from "./Slo";
-import { Code, ErrorBox, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th, thr } from "../components/ui";
+import { ErrorBox, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th, thr } from "../components/ui";
 
 type Resp = {
-  window_days: number; targets_file: string; service: SloService | null;
+  window_days: number; service: SloService | null;
   daily: { t: number; requests: number; availability: number | null; latency: number | null }[];
   routes: { route: string; requests: number; errors_5xx: number; slow: number; p95_s: number | null }[];
   codes: { code: string; count: number }[];
@@ -38,48 +37,6 @@ function SliChart({ data, k, target, label }: { data: Resp["daily"]; k: "availab
         </LineChart>
       </ResponsiveContainer>
     </div>
-  );
-}
-
-function Suggestion({ s, file, days }: { s: SloService; file: string; days: number }) {
-  const [ok, setOk] = useState(false);
-  const g = s.suggested;
-  if (!g.availability && !g.latency_ms) return null;
-  const snippet = [
-    `[services."${s.service}"]`,
-    g.latency_ms != null ? `latency_ms = ${g.latency_ms}` : null,
-    g.latency_target != null ? `latency_target = ${(g.latency_target * 100).toFixed(1)}` : null,
-    g.availability != null ? `availability = ${+(g.availability * 100).toFixed(2)}` : null,
-    `owner = "<ekip adı>"`,
-    `note = "<bu hedef neden böyle>"`,
-  ].filter(Boolean).join("\n");
-  const same = g.latency_ms === s.target.latency_ms && g.availability === s.target.availability;
-  return (
-    <Panel className="flex flex-col gap-3 p-5">
-      <div className="flex flex-col gap-1">
-        <h3 className="font-semibold">Önerilen hedef</h3>
-        <p className="text-[13.5px] text-ink-2">
-          Son {days} günün gerçek performansına göre bu servisin bugün tutturabileceği en iddialı standart seviye:
-          {" "}<b className="font-medium text-ink"><TargetText t={g} /></b>.
-          {same ? " Mevcut hedefle aynı." : " Hedefi koymak servis sahibinin kararı; öneri sadece veriyle başlangıç noktası verir."}
-        </p>
-        {s.p95_ms != null && s.p99_ms != null && (
-          <p className="text-[12.5px] text-ink-3">İsteklerin %95'i {fmtNum(s.p95_ms)} ms, %99'u {fmtNum(s.p99_ms)} ms içinde tamamlanıyor (yaklaşık, histogram sınırlarına göre).</p>
-        )}
-      </div>
-      {!same && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[12.5px] text-ink-2">Kabul edilirse <Code>{file}</Code> dosyasına eklenecek satırlar:</span>
-          <div className="relative">
-            <pre className="overflow-x-auto rounded-md bg-canvas p-3 font-mono text-[12.5px]">{snippet}</pre>
-            <button type="button" aria-label="Kopyala" className="absolute top-2 right-2 rounded border border-edge bg-panel p-1 text-ink-3 hover:text-ink"
-              onClick={() => navigator.clipboard?.writeText(snippet).then(() => { setOk(true); setTimeout(() => setOk(false), 1200); }).catch(() => {})}>
-              {ok ? <Check size={14} /> : <Copy size={14} />}
-            </button>
-          </div>
-        </div>
-      )}
-    </Panel>
   );
 }
 
@@ -122,7 +79,6 @@ export default function SloDetail() {
         </div>
       )}
 
-      {s && <Suggestion s={s} file={d.targets_file} days={d.window_days} />}
 
       {t && (
         <div className="grid gap-4 lg:grid-cols-2">

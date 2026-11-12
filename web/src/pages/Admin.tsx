@@ -4,6 +4,7 @@ import { LockKeyhole, LogOut, Search } from "lucide-react";
 import { api, post } from "../lib/api";
 import { fmtFull } from "../lib/format";
 import { Empty, ErrorBox, Loading, PageHeader, Panel, Pill, Stat, td, th, type Tone } from "../components/ui";
+import AdminTargets from "./AdminTargets";
 
 type Me = { admin: boolean; configured: boolean; user: string };
 type Ev = { ts: number; kind: string; action: string; ip: string; user: string | null; visitor: string | null; ua: string; status?: number; ms?: number; page?: string; detail?: string | null; question?: string | null; agent?: string | null; target?: string; query?: string | null };
@@ -22,6 +23,13 @@ const KIND: Record<string, { label: string; tone: Tone }> = {
   agent: { label: "agent sorusu", tone: "accent" },
   agent_ui: { label: "agent arayüzü", tone: "mute" },
   admin: { label: "admin", tone: "warn" },
+};
+
+const ACTIONS: Record<string, string> = {
+  login_ok: "Yönetime giriş yaptı",
+  login_failed: "Hatalı şifreyle giriş denedi",
+  login_blocked: "Çok fazla hatalı deneme, engellendi",
+  slo_target_changed: "Servis hedefini değiştirdi",
 };
 
 function browser(ua: string): string {
@@ -52,6 +60,7 @@ function Login() {
 
 function Logs() {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<"audit" | "targets">("audit");
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
   const [hours, setHours] = useState(24);
@@ -63,15 +72,21 @@ function Logs() {
   const events = (logs.data?.events ?? []).filter((e) => !hideApi || kind || e.kind !== "api");
   return (
     <>
-      <PageHeader eyebrow="Yönetim" title="Denetim kaydı"
+      <PageHeader eyebrow="Sadece yönetici" title="Yönetim"
         actions={<button type="button" onClick={() => logout.mutate()} className="inline-flex items-center gap-1.5 rounded-md border border-edge bg-panel px-2.5 py-1 text-[13px] text-ink-2 hover:text-ink"><LogOut size={13} /> Çıkış</button>}>
-        <p className="max-w-[80ch] text-[14px] text-ink-2">
+        <div className="flex gap-1 rounded-md bg-edge-soft p-1 w-fit" role="tablist">
+          {([["audit", "Denetim kaydı"], ["targets", "Servis hedefleri"]] as const).map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+              className={`rounded px-3 py-1 text-[13px] ${tab === k ? "bg-panel font-medium text-ink shadow-sm" : "text-ink-2 hover:text-ink"}`}>{l}</button>
+          ))}
+        </div>
+        {tab === "audit" && <p className="max-w-[80ch] text-[14px] text-ink-2">
           Portalda ve agent arayüzlerinde ne zaman, hangi IP ve tarayıcıdan, ne yapıldığı. Her tarayıcıya otomatik ve anonim bir kimlik atanır; aynı kimlik aynı tarayıcıdır.
           Port-forward ile girildiğinde IP 127.0.0.1 görünür; portal bir iç adrese açılınca gerçek IP'ler görünür.
-        </p>
+        </p>}
       </PageHeader>
 
-      {logs.isLoading ? <Loading /> : logs.error ? <ErrorBox error={logs.error} /> : (
+      {tab === "targets" ? <AdminTargets /> : logs.isLoading ? <Loading /> : logs.error ? <ErrorBox error={logs.error} /> : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Stat value={logs.data!.stats.events_24h} label="kayıt (24 saat)" />
@@ -118,7 +133,7 @@ function Logs() {
                     </td>
                     <td className={td}><Pill tone={KIND[e.kind]?.tone ?? "mute"}>{KIND[e.kind]?.label ?? e.kind}</Pill></td>
                     <td className={td + " max-w-[320px] break-words"}>
-                      {e.action}
+                      {ACTIONS[e.action] ?? e.action}
                       {e.status && e.status >= 400 && <span className="ml-1 text-crit">({e.status})</span>}
                     </td>
                     <td className={td + " max-w-[360px] break-words text-ink-2"}>

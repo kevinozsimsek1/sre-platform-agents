@@ -24,3 +24,8 @@ async def cached(key: str, ttl: int, fn: Callable[[], Awaitable[Any]], force: bo
 def cached_at(key: str) -> float | None:
     hit = _store.get(key)
     return hit[0] if hit else None
+
+
+def invalidate(prefix: str) -> None:
+    for k in [k for k in _store if k.startswith(prefix)]:
+        _store.pop(k, None)

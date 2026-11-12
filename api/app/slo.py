@@ -5,36 +5,29 @@
   - Hız: belirlenen süre sınırının altında biten istek / tüm istek
 Sağlık kontrolü uçları ve WebSocket upgrade (101) sayılmaz.
 
-Hedefler slo-targets.toml dosyasından gelir (servis sahibi belirler). Dosyada olmayan servislerde
-varsayılan hedef kullanılır. Portal ayrıca geçmiş performansa göre gerçekçi bir hedef önerir.
+Hedefler yönetim ekranından belirlenir (temel değerler slo-targets.toml, değişiklikler targets.py'de saklanır).
+Hedefi olmayan servislerde varsayılan kullanılır. Portal geçmiş performansa göre bir hedef de önerir
+(öneri sadece yönetim ekranında görünür).
 """
 from __future__ import annotations
 
 import asyncio
 import math
-import os
 import time
-import tomllib
 from typing import Any
 
-from . import config, grafana
+from . import config, grafana, targets
 
 M = "http_server_request_duration_seconds"
 FIVEXX = 'http_response_status_code=~"5.."'
 BUCKETS_MS = [5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000]
 STANDARD_AVAIL = [99.99, 99.95, 99.9, 99.5, 99.0, 98.0, 95.0]
-TARGETS_FILE = os.getenv("SLO_TARGETS_FILE", os.path.join(os.path.dirname(__file__), "..", "slo-targets.toml"))
 
 
 # ------------------------------------------------------------- hedefler
 def _load_targets() -> tuple[dict, dict]:
-    try:
-        with open(TARGETS_FILE, "rb") as f:
-            data = tomllib.load(f)
-    except FileNotFoundError:
-        data = {}
-    d = {"availability": 99.9, "latency_ms": 500, "latency_target": 99.0, **data.get("default", {})}
-    return d, data.get("services", {})
+    t = targets.cached()
+    return t["default"], t["services"]
 
 
 def _bucket(ms: float) -> int:
@@ -167,6 +160,7 @@ def _explain(m: dict | None, t: dict) -> str | None:
 
 
 async def overview() -> dict:
+    await targets.load()
     rng = f"{config.WINDOW_DAYS}d"
     w30, w7 = await asyncio.gather(_window(rng), _window("7d"))
     default, _ = _load_targets()
@@ -187,7 +181,6 @@ async def overview() -> dict:
         "fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS, "min_requests": config.SLO_MIN_REQUESTS,
         "default": {"availability": round(float(default["availability"]) / 100, 6), "latency_ms": _bucket(float(default["latency_ms"])),
                     "latency_target": round(float(default["latency_target"]) / 100, 6)},
-        "targets_file": "api/slo-targets.toml",
         "services": services,
     }
 
@@ -228,6 +221,6 @@ async def service_detail(svc: str) -> dict:
     rows.sort(key=lambda r: (-r["errors_5xx"], -r["slow"], -r["requests"]))
     ov = await overview()
     me = next((s for s in ov["services"] if s["service"] == svc), None)
-    return {"fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS, "targets_file": ov["targets_file"],
+    return {"fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS,
             "service": me, "daily": days, "routes": rows[:40],
             "codes": sorted(({"code": r["metric"].get("http_response_status_code"), "count": int(float(r["value"][1]))} for r in codes), key=lambda c: c["code"] or "")}

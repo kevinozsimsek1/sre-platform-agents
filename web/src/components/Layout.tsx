@@ -141,7 +141,7 @@ export default function Layout() {
           <div className="mt-auto hidden flex-col gap-2 border-t border-edge-soft pt-4 md:flex">
             <ThemePicker />
             <NavLink to="/admin" className={({ isActive }) => `${link} ${isActive ? "bg-accent-soft font-medium text-accent" : "text-ink-3 hover:bg-edge-soft hover:text-ink"}`}>
-              <LockKeyhole size={16} /> Denetim kaydı
+              <LockKeyhole size={16} /> Yönetim
             </NavLink>
             <p className="px-2.5 pt-1 text-[11.5px] leading-snug text-ink-3">Kaynaklar: Grafana, Prometheus, Tempo, CloudWatch · eu-central-1</p>
           </div>

@@ -15,7 +15,7 @@ const PAGES: Item[] = [
   { to: "/changes", label: "Değişiklikler (deploy ve restart)" },
   { to: "/slo", label: "Servis hedefleri (SLO)" },
   { to: "/value", label: "Maliyet ve değer" },
-  { to: "/admin", label: "Denetim kaydı" },
+  { to: "/admin", label: "Yönetim (denetim kaydı, servis hedefleri)" },
 ].map((p) => ({ ...p, group: "Sayfalar", icon: <FileText size={15} />, text: p.label }));
 
 const norm = (s: string) => s.toLocaleLowerCase("tr").replace(/\s+/g, " ");

@@ -18,6 +18,7 @@ spec:
       labels:
         app: agent-gateway
     spec:
+      serviceAccountName: sre-portal
       containers:
         - name: gateway
           image: ${ECR_REGISTRY}/agent-gateway:latest
@@ -65,6 +66,8 @@ spec:
           env:
             - name: DATA_DIR
               value: /data
+            - name: SLO_TARGETS_CONFIGMAP
+              value: sre-portal-slo-targets
             - name: PROM_DS_UID
               value: "${PROM_DS_UID}"
             - name: TEMPO_DS_UID
@@ -106,3 +109,43 @@ spec:
     - name: http
       port: 80
       targetPort: http
+---
+# Servis hedefleri yönetim ekranından değiştirilir ve bu ConfigMap'te saklanır.
+# "data" bilerek boş bırakıldı: apply, ekrandan girilen hedefleri silmesin.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-portal-slo-targets
+  namespace: mcp-llm-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-portal
+  namespace: mcp-llm-agent
+---
+# Portal sadece kendi hedef ConfigMap'ini okuyup güncelleyebilir; cluster'da başka hiçbir şeye erişimi yok.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-portal-slo-targets
+  namespace: mcp-llm-agent
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["sre-portal-slo-targets"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-portal-slo-targets
+  namespace: mcp-llm-agent
+subjects:
+  - kind: ServiceAccount
+    name: sre-portal
+    namespace: mcp-llm-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-portal-slo-targets

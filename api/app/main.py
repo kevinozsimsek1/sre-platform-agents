@@ -11,8 +11,8 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import agents, analysis, audit, changes, config, gpu, slo
-from .cache import cached
+from . import agents, analysis, audit, changes, config, gpu, slo, targets
+from .cache import cached, invalidate
 from .grafana import GrafanaError
 
 log = logging.getLogger("portal")
@@ -133,7 +133,7 @@ async def overview(refresh: bool = False) -> dict:
         "firing": sorted(firing, key=lambda r: (r["severity"] != "critical", r["title"])),
         "incidents_24h": [analysis.inc_row(i) for i in m.incidents if i["start"] >= day_ago][:20],
         "slo": {k: sum(1 for x in s["services"] if x["status"] == k) for k in ("breached", "at_risk", "ok", "low_traffic")},
-        "slo_attention": [x for x in s["services"] if x["status"] in ("breached", "at_risk")][:6],
+        "slo_attention": [_public(x) for x in s["services"] if x["status"] in ("breached", "at_risk")][:6],
         "gpu": {k: g.get(k) for k in ("available", "running", "hours", "cost_usd", "failed_launches", "reason")},
     }
 
@@ -205,14 +205,23 @@ async def changes_list(refresh: bool = False) -> dict:
                             "all_after_change": with_change}}
 
 
+ADMIN_ONLY = ("suggested",)  # hedef önerisi sadece yönetim ekranında
+
+
+def _public(svc: dict | None) -> dict | None:
+    return {k: v for k, v in svc.items() if k not in ADMIN_ONLY} if svc else svc
+
+
 @api.get("/slo")
 async def slo_list(refresh: bool = False) -> dict:
-    return await slo_overview(refresh)
+    d = await slo_overview(refresh)
+    return {**d, "services": [_public(x) for x in d["services"]]}
 
 
 @api.get("/slo/{service}")
 async def slo_service(service: str) -> dict:
-    return {**await slo_detail(service), "analysis": agents.for_target(f"slo:{service}"), "agents": agents.registry(),
+    d = await slo_detail(service)
+    return {**d, "service": _public(d["service"]), "analysis": agents.for_target(f"slo:{service}"), "agents": agents.registry(),
             "agent_suggestion": agents.recommend(["prometheus", "http_server", service])}
 
 
@@ -358,6 +367,68 @@ async def admin_audit(limit: int = 500, q: str | None = None, kind: str | None =
         raise HTTPException(401, "Admin oturumu gerekli.")
     since = int(time.time() * 1000) - hours * 3_600_000 if hours else None
     return audit.read(min(limit, 2000), q, kind, user, since)
+
+
+# ------------------------------------------------------------- admin: servis hedefleri
+class TargetReq(BaseModel):
+    availability: float | None = Field(None, ge=50, le=100)
+    latency_ms: int | None = Field(None, ge=1, le=60000)
+    latency_target: float | None = Field(None, ge=50, le=100)
+    owner: str | None = Field(None, max_length=200)
+    note: str | None = Field(None, max_length=200)
+
+
+def _require_admin(token: str | None) -> None:
+    if not audit.valid(token):
+        raise HTTPException(401, "Admin oturumu gerekli.")
+
+
+@api.get("/admin/slo-targets")
+async def admin_targets(portal_admin: str | None = Cookie(None)) -> dict:
+    _require_admin(portal_admin)
+    t = await targets.load(force=True)
+    ov = await slo_overview()
+    return {"default": t["default"], "defined": t["services"], "window_days": ov["window_days"], "min_requests": ov["min_requests"],
+            "services": ov["services"]}
+
+
+async def _apply(request: Request, service: str | None, values: dict | None) -> dict:
+    before = (await targets.load()).get("services", {}).get(service) if service else (await targets.load())["default"]
+    try:
+        await targets.save(service, values)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # ConfigMap'e yazılamadıysa
+        raise HTTPException(502, f"Hedef kaydedilemedi: {exc}") from exc
+    invalidate("slo")
+    await audit.write({"kind": "admin", "action": "slo_target_changed", "target": service or "varsayılan",
+                       "detail": json_dumps({"önce": before, "sonra": values}), **audit.who(request)})
+    return {"ok": True}
+
+
+def json_dumps(x: object) -> str:
+    import json
+    return json.dumps(x, ensure_ascii=False)[:480]
+
+
+@api.put("/admin/slo-targets/default")
+async def admin_set_default(req: TargetReq, request: Request, portal_admin: str | None = Cookie(None)) -> dict:
+    _require_admin(portal_admin)
+    if req.availability is None or req.latency_ms is None or req.latency_target is None:
+        raise HTTPException(400, "Varsayılan hedefte üç değer de olmalı.")
+    return await _apply(request, None, req.model_dump(exclude_none=True))
+
+
+@api.put("/admin/slo-targets/services/{service}")
+async def admin_set_target(service: str, req: TargetReq, request: Request, portal_admin: str | None = Cookie(None)) -> dict:
+    _require_admin(portal_admin)
+    return await _apply(request, service, req.model_dump(exclude_none=True))
+
+
+@api.delete("/admin/slo-targets/services/{service}")
+async def admin_reset_target(service: str, request: Request, portal_admin: str | None = Cookie(None)) -> dict:
+    _require_admin(portal_admin)
+    return await _apply(request, service, None)
 
 
 app.include_router(api)

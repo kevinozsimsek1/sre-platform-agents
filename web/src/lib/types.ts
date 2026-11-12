@@ -71,11 +71,11 @@ export type SloService = {
   service: string; target: SloTarget; measured: SloMeasured | null;
   status: "breached" | "at_risk" | "ok" | "low_traffic"; trend: "better" | "worse" | "same" | null; explain: string | null;
   allowed: { slow: number; errors: number };
-  suggested: { availability?: number; latency_ms?: number; latency_target?: number };
+  suggested?: { availability?: number; latency_ms?: number; latency_target?: number };  // sadece yönetim ekranında gelir
   p99_ms: number | null; p95_ms: number | null;
 };
 export type SloList = {
-  fetched_at: number; window_days: number; min_requests: number; targets_file: string;
+  fetched_at: number; window_days: number; min_requests: number;
   default: { availability: number; latency_ms: number; latency_target: number };
   services: SloService[];
 };

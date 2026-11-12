@@ -108,19 +108,11 @@ GPU maliyeti kısmı için API'nin AWS'ye okuma yetkisiyle bağlanabilmesi lazı
 
 ## Servis hedefleri (SLO)
 
-Her servisin hedefi `api/slo-targets.toml` dosyasında. Hedefi servisin sahibi ekip belirler. Dosyada olmayan servislerde `[default]` kullanılır. Portal her servis için geçmiş performansına göre bir hedef de önerir, servis detay sayfasında dosyaya eklenecek satırlar hazır gelir.
+Hedefler portalın Yönetim ekranından (Servis hedefleri sekmesi) belirlenir. Orada her servis için mevcut hedef, gerçekleşen değer ve portalın verdiği öneri yan yana durur. Öneri herkese açık sayfada görünmez.
 
-Örnek:
+Kaydedilen hedefler cluster'da `sre-portal-slo-targets` ConfigMap'inde saklanır, lokalde `DATA_DIR/slo-targets.json` dosyasında. Pod'un yetkisi sadece bu ConfigMap'i okuyup güncellemek. Her değişiklik denetim kaydına düşer.
 
-```toml
-[services."plt-comm-workflow-manager"]
-latency_ms = 5000
-latency_target = 95.0
-owner = "Platform ekibi"
-note = "İş akışları uzun sürüyor, kullanıcı arka planda bekliyor."
-```
-
-Dosyayı değiştirdikten sonra API image'ını yeniden build edip deploy etmek yeterli.
+`api/slo-targets.toml` sadece başlangıç değerleri için. Ekrandan girilen hedefler onun üstüne yazılır.
 
 ## Denetim kaydı şifresi
 

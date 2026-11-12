@@ -4,7 +4,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { api } from "../lib/api";
 import type { SloList, SloService, SloTarget } from "../lib/types";
 import { fmtNum, fmtPct } from "../lib/format";
-import { Code, ErrorBox, Freshness, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th, thr, type Tone } from "../components/ui";
+import { ErrorBox, Freshness, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th, thr, type Tone } from "../components/ui";
 
 export const STATUS: Record<SloService["status"], { tone: Tone; label: string }> = {
   breached: { tone: "crit", label: "hedefin altında" },
@@ -67,17 +67,15 @@ export default function Slo() {
           </p>
         </div>
         <div className="flex flex-col gap-1">
-          <h3 className="font-semibold">Hedefi kim belirliyor?</h3>
+          <h3 className="font-semibold">Hedefler nereden geliyor?</h3>
           <p className="text-[13.5px] text-ink-2">
-            Servisin sahibi ekip. Hedefler repodaki <Code>{d.targets_file}</Code> dosyasında, kodla birlikte tutulur; her değişiklik git geçmişinde görünür.
-            Şu an {d.services.length} servisin <b className="font-medium text-ink">{defined}</b> tanesi için hedef tanımlı.
+            Servis hedeflerini portal yöneticisi belirler. Şu an {d.services.length} servisin <b className="font-medium text-ink">{defined}</b> tanesine özel hedef tanımlı.
           </p>
         </div>
         <div className="flex flex-col gap-1">
-          <h3 className="font-semibold">Tanımlı değilse?</h3>
+          <h3 className="font-semibold">Özel hedefi olmayan servisler</h3>
           <p className="text-[13.5px] text-ink-2">
-            Varsayılan kullanılır: <TargetText t={d.default} />. Bu her servise uymaz; portal her servis için geçmiş performansına göre
-            gerçekçi bir hedef önerir, sahibi de buna göre karar verir.
+            Varsayılan hedefle ölçülür: <TargetText t={d.default} />. Tablodaki "varsayılan" etiketi bunu gösterir.
           </p>
         </div>
       </Panel>
