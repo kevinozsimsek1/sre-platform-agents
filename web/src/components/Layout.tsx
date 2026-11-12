@@ -1,16 +1,19 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { BellRing, Bot, Gauge, LockKeyhole, Siren, Target, Wallet } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BellRing, Bot, Gauge, LockKeyhole, Search, Siren, Target, Wallet } from "lucide-react";
+import { api } from "../lib/api";
 import { track } from "../lib/audit";
+import CommandPalette from "./CommandPalette";
 import { applyTheme, getTheme, type Theme } from "../lib/theme";
 
-type NavItem = { to: string; label: string; icon: ReactNode };
+type NavItem = { to: string; label: string; icon: ReactNode; badge?: "firing" | "open" | "slo" };
 
 const NAV: NavItem[] = [
   { to: "/", label: "Genel bakış", icon: <Gauge size={16} /> },
-  { to: "/alerts", label: "Gelen alert'ler", icon: <BellRing size={16} /> },
-  { to: "/incidents", label: "Olaylar ve analiz", icon: <Siren size={16} /> },
-  { to: "/slo", label: "SLO ve hata bütçesi", icon: <Target size={16} /> },
+  { to: "/alerts", label: "Gelen alert'ler", icon: <BellRing size={16} />, badge: "firing" },
+  { to: "/incidents", label: "Olaylar ve analiz", icon: <Siren size={16} />, badge: "open" },
+  { to: "/slo", label: "SLO ve hata bütçesi", icon: <Target size={16} />, badge: "slo" },
   { to: "/value", label: "Maliyet ve değer", icon: <Wallet size={16} /> },
 ];
 
@@ -52,8 +55,31 @@ function ThemePicker() {
   );
 }
 
+type Counts = { firing: { severity: string | null }[]; incidents_24h: { ongoing: boolean }[]; slo: { breached: number } };
+
+/** Menüdeki sayaçlar: şu an alarmdaki kural, açık olay ve SLO'su aşılan servis sayısı. */
+function useBadges() {
+  const q = useQuery<Counts>({ queryKey: ["overview"], queryFn: () => api("/overview"), refetchInterval: 120_000 });
+  if (!q.data) return {};
+  return {
+    firing: { n: q.data.firing.length, crit: q.data.firing.some((f) => f.severity === "critical"), title: "şu an alarmdaki kural" },
+    open: { n: q.data.incidents_24h.filter((i) => i.ongoing).length, crit: true, title: "açık olay" },
+    slo: { n: q.data.slo.breached, crit: true, title: "SLO hedefini aşan servis" },
+  } as Record<string, { n: number; crit: boolean; title: string }>;
+}
+
 export default function Layout() {
   const loc = useLocation();
+  const badges = useBadges();
+  const [palette, setPalette] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName);
+      if ((e.key === "k" && (e.metaKey || e.ctrlKey)) || (e.key === "/" && !typing)) { e.preventDefault(); setPalette(true); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     track({ type: "page_view", page: loc.pathname, target: loc.pathname });
     window.scrollTo(0, 0);
@@ -71,6 +97,15 @@ export default function Layout() {
             </div>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setPalette(true)}
+            className="hidden items-center gap-2 rounded-md border border-edge bg-canvas px-2.5 py-1.5 text-[13px] text-ink-3 hover:text-ink md:flex"
+          >
+            <Search size={14} /> <span className="flex-1 text-left">Ara</span>
+            <kbd className="rounded border border-edge px-1 font-mono text-[10.5px]">{navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
+
           <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible" aria-label="Portal">
             {NAV.map((item) => (
               <NavLink
@@ -81,6 +116,14 @@ export default function Layout() {
               >
                 {item.icon}
                 {item.label}
+                {item.badge && badges[item.badge]?.n > 0 && (
+                  <span
+                    title={`${badges[item.badge].n} ${badges[item.badge].title}`}
+                    className={`ml-auto rounded-full px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums ${badges[item.badge].crit ? "bg-crit-soft text-crit" : "bg-warn-soft text-warn"}`}
+                  >
+                    {badges[item.badge].n}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -103,6 +146,8 @@ export default function Layout() {
           </div>
         </div>
       </aside>
+
+      <CommandPalette open={palette} onClose={() => setPalette(false)} />
 
       <main className="min-w-0 flex-1 px-4 py-7 md:px-9">
         <div className="mx-auto flex max-w-6xl flex-col gap-9">

@@ -50,6 +50,8 @@ export default function Overview() {
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
   const d = q.data!;
   const openInc = d.incidents_24h.filter((i) => i.ongoing);
+  const critFiring = d.firing.filter((f) => f.severity === "critical");
+  const calm = openInc.length === 0 && critFiring.length === 0;
 
   return (
     <>
@@ -57,6 +59,23 @@ export default function Overview() {
         actions={<Freshness at={d.fetched_at} busy={q.isFetching} onRefresh={() => qc.fetchQuery({ queryKey: ["overview"], queryFn: () => api("/overview?refresh=true") })} />}>
         <p className="max-w-[76ch] text-[15px] text-ink-2">Prod'un şu anki durumu: alarmda olanlar, son 24 saatin olayları, SLO'su risk altındaki servisler ve önce düzeltilmesi gereken alert'ler.</p>
       </PageHeader>
+
+      <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-3 text-[14.5px] ${calm ? "border-good/30 bg-good-soft/50" : "border-crit/40 bg-crit-soft/60"}`} role="status">
+        <span className={`size-2.5 shrink-0 rounded-full ${calm ? "bg-good" : "bg-crit motion-safe:animate-pulse"}`} aria-hidden />
+        {calm ? (
+          <span><b className="font-semibold">Prod sakin.</b> <span className="text-ink-2">Şu an açık olay ve alarmda critical kural yok.</span></span>
+        ) : (
+          <span>
+            <b className="font-semibold">Dikkat:</b>{" "}
+            {openInc.length > 0 && <Link to={`/incidents/${openInc[0].id}`} className="underline-offset-2 hover:underline">{openInc.length} açık olay</Link>}
+            {openInc.length > 0 && critFiring.length > 0 && ", "}
+            {critFiring.length > 0 && <Link to={`/alerts/${critFiring[0].org}/${critFiring[0].uid}`} className="underline-offset-2 hover:underline">{critFiring.length} critical alert alarmda</Link>}
+          </span>
+        )}
+        {d.slo.breached > 0 && (
+          <Link to="/slo" className="text-ink-2 underline-offset-2 hover:underline sm:ml-auto">{d.slo.breached} servis SLO hedefinin dışında</Link>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat value={d.firing.length} label="kural şu an alarmda" tone={d.firing.some((f) => f.severity === "critical") ? "crit" : d.firing.length ? "warn" : "good"} />

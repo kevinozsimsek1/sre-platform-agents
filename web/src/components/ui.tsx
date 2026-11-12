@@ -89,10 +89,30 @@ export function Code({ children }: { children: ReactNode }) {
   return <code className="rounded bg-edge-soft px-1.5 py-px font-mono text-[0.86em] break-words">{children}</code>;
 }
 
-export function Loading({ label = "Yükleniyor" }: { label?: string }) {
+/** Sayfa yüklenirken sayfanın iskeletini gösterir; inline=true ise küçük bir yükleniyor satırı. */
+export function Loading({ label = "Yükleniyor", inline = false }: { label?: string; inline?: boolean }) {
+  if (inline) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-ink-3" role="status">
+        <Loader2 size={16} className="animate-spin" /> {label}…
+      </div>
+    );
+  }
+  const block = "rounded-lg bg-edge-soft";
   return (
-    <div className="flex items-center gap-2 py-10 text-sm text-ink-3" role="status">
-      <Loader2 size={16} className="animate-spin" /> {label}…
+    <div className="flex flex-col gap-8" role="status" aria-label={label}>
+      <div className="flex flex-col gap-3 border-b border-edge pb-6 motion-safe:animate-pulse">
+        <div className={`${block} h-3 w-28`} />
+        <div className={`${block} h-7 w-72`} />
+        <div className={`${block} h-4 w-full max-w-xl`} />
+      </div>
+      <div className="grid grid-cols-2 gap-3 motion-safe:animate-pulse lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <div key={i} className={`${block} h-24`} />)}
+      </div>
+      <div className="grid gap-4 motion-safe:animate-pulse lg:grid-cols-2">
+        <div className={`${block} h-56`} /><div className={`${block} h-56`} />
+      </div>
+      <p className="flex items-center gap-2 text-[13px] text-ink-3"><Loader2 size={14} className="animate-spin" /> {label}…</p>
     </div>
   );
 }

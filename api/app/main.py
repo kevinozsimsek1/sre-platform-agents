@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, Request, Response
@@ -13,7 +15,31 @@ from . import agents, analysis, audit, config, gpu, slo
 from .cache import cached
 from .grafana import GrafanaError
 
-app = FastAPI(title="Nebim SRE Portal API", docs_url="/_portal/api/docs", openapi_url="/_portal/api/openapi.json")
+log = logging.getLogger("portal")
+
+
+async def _keep_warm() -> None:
+    """Veriyi arka planda hazır tutar: kullanıcı sayfayı açtığında Grafana'yı beklemez.
+    Önbellek süresi dolmadan yenilendiği için istekler hep hazır veriyi görür."""
+    while True:
+        jobs = (("alert verisi", lambda: model(True)), ("SLO", lambda: slo_overview(True)),
+                ("GPU", lambda: cached("gpu", 300, gpu.overview, True)))
+        for name, job in jobs:
+            try:
+                await job()
+            except Exception as exc:  # bir kaynak hata verse de diğerleri yenilensin
+                log.warning("Arka plan yenileme başarısız (%s): %s", name, exc)
+        await asyncio.sleep(max(60, config.CACHE_TTL - 60))
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    task = asyncio.create_task(_keep_warm())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Nebim SRE Portal API", docs_url="/_portal/api/docs", openapi_url="/_portal/api/openapi.json", lifespan=lifespan)
 api = APIRouter(prefix="/_portal/api")
 COOKIE = "portal_admin"
 

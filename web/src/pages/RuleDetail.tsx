@@ -17,7 +17,7 @@ function EpisodeGuide({ org, uid, ep }: { org: string; uid: string; ep: Episode 
     queryKey: ["ep-guide", org, uid, ep.start, ep.series],
     queryFn: () => api(`/alerts/rules/${org}/${uid}/investigate?start=${ep.start}${ep.end ? `&end=${ep.end}` : ""}&series=${encodeURIComponent(ep.series)}`),
   });
-  if (q.isLoading) return <Loading label="Hazırlanıyor" />;
+  if (q.isLoading) return <Loading label="Hazırlanıyor" inline />;
   if (q.error) return <ErrorBox error={q.error} />;
   return <Investigate items={q.data!.guide} compact />;
 }
