@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import agents, analysis, audit, changes, config, gpu, slo, targets
+from . import agents, analysis, audit, changes, cluster, config, gpu, slo, targets, team
 from .cache import cached, invalidate
 from .grafana import GrafanaError
 
@@ -112,12 +112,12 @@ async def health() -> dict:
 @api.get("/config")
 async def public_config() -> dict:
     """Arayüzün ihtiyaç duyduğu, gizli olmayan ayarlar."""
-    return {"aws_account": config.AWS_PROD_ACCOUNT or None, "grafana_url": config.GRAFANA_URL}
+    return {"aws_account": config.AWS_PROD_ACCOUNT or None, "grafana_url": config.GRAFANA_URL, "team": team.members()}
 
 
 @api.get("/overview")
 async def overview(refresh: bool = False) -> dict:
-    m, g = await asyncio.gather(model(refresh), cached("gpu", 300, gpu.overview, refresh))
+    m, g, asg = await asyncio.gather(model(refresh), cached("gpu", 300, gpu.overview, refresh), team.assignments())
     try:
         s = await slo_overview(refresh)
     except HTTPException:
@@ -131,7 +131,7 @@ async def overview(refresh: bool = False) -> dict:
         "fetched_at": m.fetched_at,
         "alerts": {**summ["totals"], "top_findings": summ["findings"][:5]},
         "firing": sorted(firing, key=lambda r: (r["severity"] != "critical", r["title"])),
-        "incidents_24h": [analysis.inc_row(i) for i in m.incidents if i["start"] >= day_ago][:20],
+        "incidents_24h": [{**analysis.inc_row(i), "assignee": asg.get(i["id"])} for i in m.incidents if i["start"] >= day_ago][:20],
         "slo": {k: sum(1 for x in s["services"] if x["status"] == k) for k in ("breached", "at_risk", "ok", "low_traffic")},
         "slo_attention": [_public(x) for x in s["services"] if x["status"] in ("breached", "at_risk")][:6],
         "gpu": {k: g.get(k) for k in ("available", "running", "hours", "cost_usd", "failed_launches", "reason")},
@@ -149,8 +149,29 @@ async def rule(org: int, uid: str) -> dict:
     if not d:
         raise HTTPException(404, "Kural bulunamadı")
     r = (await model()).rules[f"{org}:{uid}"]
+    rb = (await team.runbooks()).get(f"{org}:{uid}")
     return {**d, "analysis": agents.for_target(f"rule:{org}:{uid}"), "agents": agents.registry(),
-            "agent_suggestion": agents.recommend(analysis.signals(await model(), r))}
+            "agent_suggestion": agents.recommend(analysis.signals(await model(), r)), "runbook": rb}
+
+
+class RunbookReq(BaseModel):
+    text: str = Field("", max_length=team.RUNBOOK_MAX)
+
+
+@api.put("/alerts/rules/{org}/{uid}/runbook")
+async def rule_runbook(org: int, uid: str, req: RunbookReq, request: Request) -> dict:
+    key = f"{org}:{uid}"
+    m = await model()
+    if key not in m.rules:
+        raise HTTPException(404, "Kural bulunamadı")
+    before = (await team.runbooks()).get(key)
+    try:
+        rb = await team.set_runbook(key, req.text)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    await audit.write({"kind": "team", "action": "runbook_changed", "target": m.rules[key].title,
+                       "detail": f"{len((before or {}).get('text', ''))} → {len(req.text.strip())} karakter", **audit.who(request)})
+    return {"runbook": rb}
 
 
 @api.get("/alerts/rules/{org}/{uid}/investigate")
@@ -170,8 +191,10 @@ async def incidents(refresh: bool = False) -> dict:
     ch = await changes_or_empty()
     out = analysis.incidents_list(m)
     store = agents._load()
+    asg = await team.assignments()
     by_id = {i["id"]: i for i in m.incidents}
     for i in out["items"]:
+        i["assignee"] = asg.get(i["id"])
         i["analyses"] = len(store.get(f"incident:{i['id']}", []))
         found = _inc_changes(ch, by_id[i["id"]])
         i["after_change"] = bool(found)
@@ -187,8 +210,38 @@ async def incident(iid: str) -> dict:
     m = await model()
     sig = [x for k in d["rules"] for x in analysis.signals(m, m.rules[k["key"]])]
     inc = next(i for i in m.incidents if i["id"] == iid)
+    asg, rbs = await asyncio.gather(team.assignments(), team.runbooks())
     return {**d, "analysis": agents.for_incident(iid), "agents": agents.registry(), "agent_suggestion": agents.recommend(sig),
-            "changes": _inc_changes(await changes_or_empty(), inc)}
+            "changes": _inc_changes(await changes_or_empty(), inc), "assignee": asg.get(iid),
+            "runbooks": {k["key"]: rbs[k["key"]] for k in d["rules"] if k["key"] in rbs}}
+
+
+class AssignReq(BaseModel):
+    to: str | None = Field(None, max_length=60)
+
+
+@api.put("/incidents/{iid}/assignee")
+async def incident_assign(iid: str, req: AssignReq, request: Request) -> dict:
+    m = await model()
+    inc = next((i for i in m.incidents if i["id"] == iid), None)
+    if not inc:
+        raise HTTPException(404, "Olay bulunamadı")
+    before = (await team.assignments()).get(iid)
+    try:
+        a = await team.assign(iid, req.to)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    await audit.write({"kind": "team", "action": "incident_assigned", "target": iid,
+                       "detail": f"{(before or {}).get('to') or 'kimse'} → {req.to or 'kimse'} · {inc['rules'][0]['title']}", **audit.who(request)})
+    return {"assignee": a}
+
+
+@api.get("/cluster")
+async def cluster_overview(refresh: bool = False) -> dict:
+    try:
+        return await cached("cluster", 60, cluster.overview, refresh)
+    except GrafanaError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 @api.get("/changes")

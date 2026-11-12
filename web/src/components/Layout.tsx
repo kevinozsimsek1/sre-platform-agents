@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BellRing, Bot, Gauge, GitCommitHorizontal, LockKeyhole, Search, Siren, Target, Wallet } from "lucide-react";
+import { BellRing, Bot, Gauge, GitCommitHorizontal, LockKeyhole, Search, Siren, Target, Wallet, Boxes } from "lucide-react";
 import { api } from "../lib/api";
 import { track } from "../lib/audit";
 import CommandPalette from "./CommandPalette";
@@ -14,6 +14,7 @@ const NAV: NavItem[] = [
   { to: "/alerts", label: "Gelen alert'ler", icon: <BellRing size={16} />, badge: "firing" },
   { to: "/incidents", label: "Olaylar ve analiz", icon: <Siren size={16} />, badge: "open" },
   { to: "/changes", label: "Değişiklikler", icon: <GitCommitHorizontal size={16} /> },
+  { to: "/cluster", label: "Cluster durumu", icon: <Boxes size={16} /> },
   { to: "/slo", label: "Servis hedefleri (SLO)", icon: <Target size={16} />, badge: "slo" },
   { to: "/value", label: "Maliyet ve değer", icon: <Wallet size={16} /> },
 ];

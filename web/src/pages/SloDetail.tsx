@@ -1,9 +1,9 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileSearch, Sparkles } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
-import type { AgentInfo, AgentState, SloService } from "../lib/types";
+import type { AgentInfo, AgentState, SloLogs, SloService } from "../lib/types";
 import { fmtDate, fmtNum, fmtPct } from "../lib/format";
 import AgentPanel from "../components/AgentPanel";
 import { STATUS, SourcePill, TargetText, Trend } from "./Slo";
@@ -12,7 +12,8 @@ import { ErrorBox, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th,
 type Resp = {
   window_days: number; service: SloService | null;
   daily: { t: number; requests: number; availability: number | null; latency: number | null }[];
-  routes: { route: string; requests: number; errors_5xx: number; slow: number; p95_s: number | null }[];
+  routes: { route: string; requests: number; errors_5xx: number; slow: number; p95_s: number | null; logs?: { all: string; errors: string } }[];
+  logs: SloLogs | null;
   codes: { code: string; count: number }[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
 };
@@ -40,10 +41,19 @@ function SliChart({ data, k, target, label }: { data: Resp["daily"]; k: "availab
   );
 }
 
+function LogLink({ href, primary, children }: { href: string; primary?: boolean; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer"
+      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] ${primary ? "bg-accent font-medium text-white" : "border border-edge text-ink-2 hover:text-ink"}`}>
+      {children} <ExternalLink size={12} />
+    </a>
+  );
+}
+
 export default function SloDetail() {
   const { service = "" } = useParams();
   const q = useQuery<Resp>({ queryKey: ["slo", service], queryFn: () => api(`/slo/${encodeURIComponent(service)}`) });
-  if (q.isLoading) return <Loading label="Route bazında hesaplanıyor" />;
+  if (q.isLoading) return <Loading label="Endpoint bazında hesaplanıyor" />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
   const d = q.data!;
   const s = d.service;
@@ -75,7 +85,7 @@ export default function SloDetail() {
             hint={`İzin verilen yavaş istek ${fmtNum(s.allowed.slow)}, gerçekleşen ${fmtNum(m.slow)}`} />
           <Stat value={fmtPct(m.availability, 2)} label={`hatasız yanıt · hedef ${fmtPct(t.availability, 1)}`} tone={m.availability < t.availability ? "crit" : "good"}
             hint={`İzin verilen hata ${fmtNum(s.allowed.errors)}, gerçekleşen ${fmtNum(m.errors_5xx)}`} />
-          <Stat value={<span className="text-[20px]"><Trend v={s.trend} /></span>} label="son 7 gün, 30 günlük ortalamaya göre" />
+          <Stat value={<span className="text-[15px]"><Trend s={s} big /></span>} label="son hafta, 30 günlük ortalamaya göre" />
         </div>
       )}
 
@@ -87,10 +97,32 @@ export default function SloDetail() {
         </div>
       )}
 
-      <Section title="Hangi işlemler yavaş ya da hatalı" aside="Önce hata, sonra yavaş istek sayısına göre · p95 son 7 gün">
+      {d.logs && (
+        <Panel className="flex flex-col gap-3 p-4">
+          <div className="flex items-start gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-edge-soft text-ink-2"><FileSearch size={18} /></span>
+            <div className="flex flex-col gap-0.5">
+              <h3 className="font-semibold">Loglara bak (AWS CloudWatch)</h3>
+              <p className="text-[13px] text-ink-2">
+                Sorgu hazır gelir, açılınca "Run query" demen yeterli. Prod hesabına girmiş olman gerekir. Son 6 saate ayarlı, aralığı konsoldan genişletebilirsin
+                (Logs Insights taranan log miktarına göre küçük bir ücret alır, aralığı gereksiz büyütme).
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <LogLink href={d.logs.errors} primary>Hata logları</LogLink>
+            {d.logs.error_counts && <LogLink href={d.logs.error_counts}>Hata sayısı, 10 dakikalık (son 24 saat)</LogLink>}
+            <LogLink href={d.logs.all}>Tüm loglar</LogLink>
+            {d.logs.group_url && <LogLink href={d.logs.group_url}>Log grubu</LogLink>}
+          </div>
+          {d.logs.group && <span className="font-mono text-[11.5px] text-ink-3">{d.logs.group}</span>}
+        </Panel>
+      )}
+
+      <Section title="Hangi endpoint'ler yavaş ya da hatalı" aside="Önce hata, sonra yavaş istek sayısına göre · p95 son 7 gün">
         <Panel className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-[13.5px]">
-            <thead><tr><th className={th}>İşlem (route)</th><th className={thr}>İstek</th><th className={thr}>5xx</th><th className={thr}>Yavaş</th><th className={thr}>Yavaş oranı</th><th className={thr}>p95</th></tr></thead>
+          <table className="w-full min-w-[820px] text-[13.5px]">
+            <thead><tr><th className={th}>Endpoint</th><th className={thr}>İstek</th><th className={thr}>5xx</th><th className={thr}>Yavaş</th><th className={thr}>Yavaş oranı</th><th className={thr}>p95</th>{d.logs && <th className={th}>Log</th>}</tr></thead>
             <tbody className="divide-y divide-edge-soft">
               {d.routes.map((r) => {
                 const slowPct = r.requests ? r.slow / r.requests : 0;
@@ -102,6 +134,16 @@ export default function SloDetail() {
                     <td className={tdn}>{fmtNum(r.slow)}</td>
                     <td className={tdn}><span className={slowPct > 0.05 ? "text-warn" : ""}>{fmtPct(slowPct, 1)}</span></td>
                     <td className={tdn}><span className={t && (r.p95_s ?? 0) * 1000 > t.latency_ms ? "text-warn" : ""}>{r.p95_s != null ? `${fmtNum(r.p95_s * 1000)} ms` : "—"}</span></td>
+                    {d.logs && (
+                      <td className={td + " whitespace-nowrap text-[12.5px]"}>
+                        {r.logs && <>
+                          <a href={r.errors_5xx ? r.logs.errors : r.logs.all} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+                            {r.errors_5xx ? "hatalar" : "loglar"} <ExternalLink size={11} />
+                          </a>
+                          {r.errors_5xx > 0 && <a href={r.logs.all} target="_blank" rel="noreferrer" className="ml-2 text-ink-3 hover:text-ink">tümü</a>}
+                        </>}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

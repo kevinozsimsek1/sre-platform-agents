@@ -15,7 +15,7 @@ from urllib.parse import quote
 from . import config
 
 REGION = config.AWS_REGION
-CONSOLE = f"https://{REGION}.console.aws.amazon.com"
+CONSOLE = "https://console.aws.amazon.com"
 
 
 # ------------------------------------------------------------- link yardımcıları
@@ -45,10 +45,55 @@ def cw_metric(namespace: str, metric: str, dims: dict[str, str], stat: str, star
 
 
 def logs_insights(groups: list[str], query: str, start: int, end: int) -> str:
-    src = "~(" + "".join(f"~'{_aws_enc(g)}" for g in groups) + ")"
+    src = "(" + "".join(f"~'{_aws_enc(g)}" for g in groups) + ")"
     detail = (f"~(end~'{_aws_enc(_iso(end))}~start~'{_aws_enc(_iso(start))}~timeType~'ABSOLUTE~tz~'Local"
               f"~editorString~'{_aws_enc(query)}~source~{src})")
     return f"{CONSOLE}/cloudwatch/home?region={REGION}#logsV2:logs-insights$3FqueryDetail$3D{detail}"
+
+
+def logs_insights_recent(groups: list[str], query: str, seconds: int = 6 * 3600) -> str:
+    """Son N saniyeye ayarlı Logs Insights linki (sayfa ne zaman açılırsa açılsın güncel aralık)."""
+    src = "(" + "".join(f"~'{_aws_enc(g)}" for g in groups) + ")"
+    detail = (f"~(end~0~start~-{seconds}~timeType~'RELATIVE~unit~'seconds~tz~'Local"
+              f"~editorString~'{_aws_enc(query)}~source~{src})")
+    return f"{CONSOLE}/cloudwatch/home?region={REGION}#logsV2:logs-insights$3FqueryDetail$3D{detail}"
+
+
+def log_group_url(group: str) -> str:
+    return f"{CONSOLE}/cloudwatch/home?region={REGION}#logsV2:log-groups/log-group/{_aws_enc(group).replace('*', '$25')}"
+
+
+def route_regex(route: str) -> str:
+    r"""ASP.NET route şablonunu log satırında aranacak regex'e çevirir: Orders/{id:guid} -> Orders\/[^\/\s?"]+"""
+    out = []
+    for part in re.split(r"(\{[^}]*\})", route.strip("/")):
+        if part.startswith("{"):
+            out.append(r'[^\/\s?"]+')
+        elif part:
+            out.append(re.sub(r"([.*+?^$()\[\]|\\/])", r"\\\1", part))
+    return "".join(out)
+
+
+ERR_RE = r"(?i)(exception|\berror\b|\bfail|\bfatal\b| 5\d\d )"
+
+
+def service_logs(group: str, route: str | None = None) -> dict:
+    """SLO sayfası için: servisin loglarına (CloudWatch Logs Insights) giden hazır sorgular."""
+    head = "fields @timestamp, kubernetes.pod_name as pod, @message"
+    tail = "| sort @timestamp desc\n| limit 200"
+    if route:
+        rx = route_regex(route)
+        return {
+            "all": logs_insights_recent([group], f"{head}\n| filter @message like /(?i){rx}/\n{tail}"),
+            "errors": logs_insights_recent([group], f"{head}\n| filter @message like /(?i){rx}/ and @message like /{ERR_RE}/\n{tail}"),
+        }
+    return {
+        "group": group,
+        "group_url": log_group_url(group),
+        "errors": logs_insights_recent([group], f"{head}\n| filter @message like /{ERR_RE}/\n{tail}"),
+        "error_counts": logs_insights_recent([group], f"filter @message like /{ERR_RE}/\n| stats count(*) as hata by bin(10m)\n| sort bin(10m) desc", 24 * 3600),
+        "all": logs_insights_recent([group], f"{head}\n{tail}"),
+    }
 
 
 # ------------------------------------------------------------- rehber
@@ -172,7 +217,7 @@ def prom_hint(org: int, expr: str, labels: dict[str, str], dss: dict[str, dict],
         ex("Hangi servis çağırıyor", "topk(10, sum by (service_name, server_address) (rate(http_client_request_duration_seconds_count[5m])))")
     elif "http_server_request" in expr:
         why = "Servise gelen istekler. Hangi route'un hata ya da gecikme ürettiğini bul, sonra o aralıktaki trace'lere bak."
-        ex("Route bazında 5xx", 'topk(10, sum by (service_name, http_route) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])))')
+        ex("Endpoint bazında 5xx", 'topk(10, sum by (service_name, http_route) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])))')
     elif "kube_pod" in expr:
         reason = labels.get("reason")
         why = {"ImagePullBackOff": "Image çekilemiyor: tag yanlış, image silinmiş ya da registry yetkisi yok.",

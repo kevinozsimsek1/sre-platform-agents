@@ -16,7 +16,7 @@ import math
 import time
 from typing import Any
 
-from . import config, grafana, targets
+from . import cache, config, grafana, investigate, targets
 
 M = "http_server_request_duration_seconds"
 FIVEXX = 'http_response_status_code=~"5.."'
@@ -124,6 +124,22 @@ def _status(m: dict | None, t: dict) -> str:
     return "at_risk" if used > 0.75 else "ok"
 
 
+def _rates(m: dict | None) -> dict | None:
+    if not m or not m["requests"]:
+        return None
+    return {"slow": round(m["slow"] / m["requests"], 5), "errors": round(m["errors_5xx"] / m["requests"], 6)}
+
+
+def _trend_detail(m30: dict | None, m7: dict | None) -> dict | None:
+    """Son hafta ile 30 günü yan yana: ekranda "yavaş istek %4 → %9" diye gösterilir."""
+    a, b = _rates(m30), _rates(m7)
+    if not a or not b or m7["requests"] < 200:
+        return None
+    # hangisi daha çok değişti: hata payı küçük olduğu için 10 kat ağırlıklı
+    d_slow, d_err = b["slow"] - a["slow"], 10 * (b["errors"] - a["errors"])
+    return {"month": a, "week": b, "by": "errors" if abs(d_err) > abs(d_slow) else "slow"}
+
+
 def _trend(m30: dict | None, m7: dict | None) -> str | None:
     """Son 7 gün, 30 günlük ortalamadan belirgin şekilde iyi mi kötü mü?"""
     if not m30 or not m7 or m7["requests"] < 200:
@@ -171,7 +187,7 @@ async def overview() -> dict:
         allowed_slow = int((1 - t["latency_target"]) * m["requests"]) if m else 0
         allowed_err = int((1 - t["availability"]) * m["requests"]) if m else 0
         services.append({
-            "service": svc, "target": t, "measured": m, "status": _status(m, t), "trend": _trend(m, m7),
+            "service": svc, "target": t, "measured": m, "status": _status(m, t), "trend": _trend(m, m7), "trend_detail": _trend_detail(m, m7),
             "explain": _explain(m, t), "allowed": {"slow": allowed_slow, "errors": allowed_err},
             "suggested": _suggest(w), "p99_ms": _p(w, 0.99), "p95_ms": _p(w, 0.95),
         })
@@ -183,6 +199,22 @@ async def overview() -> dict:
                     "latency_target": round(float(default["latency_target"]) / 100, 6)},
         "services": services,
     }
+
+
+async def _log_groups() -> list[str]:
+    uid = await grafana.find_datasource("cloudwatch", "")
+    r = await grafana.get(f"/api/datasources/uid/{uid}/resources/log-groups", config.PROM_ORG,
+                          {"region": "default", "limit": 50, "logGroupNamePrefix": config.LOG_GROUP_PREFIX})
+    return [x["value"]["name"] for x in r]
+
+
+async def log_group_for(svc: str) -> str | None:
+    """Servisin CloudWatch log grubu (ör. /aws/containerinsights/<cluster>/<servis>). Bulunamazsa None."""
+    try:
+        groups = await cache.cached("log-groups", 1800, _log_groups)
+    except Exception:  # noqa: BLE001 — link yoksa sayfa yine açılsın
+        return None
+    return next((g for g in groups if g.rsplit("/", 1)[-1] == svc), None)
 
 
 async def service_detail(svc: str) -> dict:
@@ -221,6 +253,12 @@ async def service_detail(svc: str) -> dict:
     rows.sort(key=lambda r: (-r["errors_5xx"], -r["slow"], -r["requests"]))
     ov = await overview()
     me = next((s for s in ov["services"] if s["service"] == svc), None)
+    group = await log_group_for(svc)
+    rows = rows[:40]
+    if group:
+        for r in rows:
+            r["logs"] = investigate.service_logs(group, r["route"])
     return {"fetched_at": int(time.time() * 1000), "window_days": config.WINDOW_DAYS,
-            "service": me, "daily": days, "routes": rows[:40],
+            "service": me, "daily": days, "routes": rows,
+            "logs": investigate.service_logs(group) if group else None,
             "codes": sorted(({"code": r["metric"].get("http_response_status_code"), "count": int(float(r["value"][1]))} for r in codes), key=lambda c: c["code"] or "")}

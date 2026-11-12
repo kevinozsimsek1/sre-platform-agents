@@ -8,6 +8,7 @@ import { fmtDate, fmtDateTime, fmtMin, fmtNum } from "../lib/format";
 import BarChart from "../components/BarChart";
 import Investigate, { GuideNote, type GuideItem } from "../components/Investigate";
 import AgentPanel from "../components/AgentPanel";
+import { RunbookPanel } from "../components/Runbook";
 import { Code, Empty, ErrorBox, Loading, PageHeader, Panel, Pill, Section, Severity, Stat, td, tdn, th, thr } from "../components/ui";
 
 const LEVEL_TONE = { crit: "crit", warn: "warn", info: "mute" } as const;
@@ -68,6 +69,8 @@ export default function RuleDetail() {
         <Stat value={fmtNum(r.errors)} label="sorgu hatası" tone={r.errors > 20 ? "crit" : undefined} />
         <Stat value={fmtNum(r.nearmiss)} label="eşiğe gelip geri dönen (pending→normal)" />
       </div>
+
+      <RunbookPanel key={`${org}:${uid}:${d.runbook?.at ?? 0}`} ruleKey={`${org}:${uid}`} rb={d.runbook} />
 
       {d.findings.length > 0 && (
         <Section title="Bulgular">

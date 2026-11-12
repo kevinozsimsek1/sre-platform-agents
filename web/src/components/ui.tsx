@@ -30,7 +30,7 @@ export function Severity({ value }: { value?: string | null }) {
 export const FINDING: Record<string, { label: string; tone: Tone }> = {
   broken: { label: "Bozuk", tone: "crit" },
   nodata: { label: "Veri yok", tone: "warn" },
-  flapping: { label: "Titrek", tone: "warn" },
+  flapping: { label: "Dalgalı", tone: "warn" },
   scheduled: { label: "Zamanlı", tone: "warn" },
   duplicate: { label: "Kopya", tone: "warn" },
   long_open: { label: "Uzun süredir açık", tone: "warn" },

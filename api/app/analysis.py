@@ -229,6 +229,8 @@ class Model:
         self.contact_points[org] = o["contact_points"]
         self.datasources.update(o["datasources"])
         for r in o["rules"]:
+            if not self._is_prod(r, o["datasources"]):
+                continue
             m = RuleModel(
                 org=org, uid=r["uid"], title=r["title"], folder=o["folders"].get(r.get("folderUID"), "—"),
                 group=r.get("ruleGroup", ""), severity=(r.get("labels") or {}).get("severity"), for_=r.get("for") or "0s",
@@ -248,6 +250,22 @@ class Model:
                     for a in rr.get("alerts", []) or []
                 ]
         self._episodes(org, o["annotations"])
+
+    @staticmethod
+    def _is_prod(r: dict, dss: dict[str, dict]) -> bool:
+        """Portal sadece prod'u gösterir: dev/qa/uat veri kaynağına dokunan ya da adı öyle olan kurallar alınmaz."""
+        if config.NONPROD_TITLE_PATTERN and re.search(config.NONPROD_TITLE_PATTERN, r.get("title", ""), re.I):
+            return False
+        if not config.PROD_DS_PATTERN:
+            return True
+        for d in r.get("data", []):
+            uid = d.get("datasourceUid")
+            if not uid or uid in ("__expr__", "-100"):
+                continue
+            name = (dss.get(uid) or {}).get("name", uid)
+            if not re.search(config.PROD_DS_PATTERN, name, re.I):
+                return False
+        return True
 
     def _episodes(self, org: int, anns: list[dict]) -> None:
         open_fire: dict[tuple[str, str], Episode] = {}
@@ -312,7 +330,7 @@ class Model:
             target = 5.0 if for_min < 5 else for_min * 2
             saved = sum(1 for d in durs if d < target - for_min)
         if fires >= FLAP_MIN_FIRES and durs and short / len(durs) >= FLAP_SHORT_SHARE and saved > 0:
-            out.append(dict(code="flapping", level="warn", title="Titrek: çoğu tetiklenme kendiliğinden kısa sürede düzeliyor",
+            out.append(dict(code="flapping", level="warn", title="Dalgalı: çoğu tetiklenme kendiliğinden kısa sürede düzeliyor",
                             detail=f"{fires} tetiklenmenin {short}'i (%{pct(short, len(durs)):.0f}) {SHORT_MIN} dakikadan kısa sürdü. "
                                    f"Ortanca süre {statistics.median(durs):.1f} dk, bekleme süresi (for) {r.for_}.",
                             suggestion=f"for değerini {int(target)} dakikaya çıkarın; geçmiş veriye göre yaklaşık {saved} tetiklenme önlenirdi.",

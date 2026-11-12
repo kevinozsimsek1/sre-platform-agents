@@ -23,6 +23,7 @@ const KIND: Record<string, { label: string; tone: Tone }> = {
   agent: { label: "agent sorusu", tone: "accent" },
   agent_ui: { label: "agent arayüzü", tone: "mute" },
   admin: { label: "admin", tone: "warn" },
+  team: { label: "ekip", tone: "accent" },
 };
 
 const ACTIONS: Record<string, string> = {
@@ -30,6 +31,8 @@ const ACTIONS: Record<string, string> = {
   login_failed: "Hatalı şifreyle giriş denedi",
   login_blocked: "Çok fazla hatalı deneme, engellendi",
   slo_target_changed: "Servis hedefini değiştirdi",
+  incident_assigned: "Olayı atadı",
+  runbook_changed: "Runbook'u değiştirdi",
 };
 
 function browser(ua: string): string {
@@ -137,7 +140,7 @@ function Logs() {
                       {e.status && e.status >= 400 && <span className="ml-1 text-crit">({e.status})</span>}
                     </td>
                     <td className={td + " max-w-[360px] break-words text-ink-2"}>
-                      {e.question ? <>“{e.question}”{e.agent && <span className="text-ink-3"> → {e.agent}</span>}</> : e.target ? e.target : e.detail ?? e.page ?? e.query ?? ""}
+                      {e.question ? <>“{e.question}”{e.agent && <span className="text-ink-3"> → {e.agent}</span>}</> : e.target ? <>{e.target}{e.kind === "team" && e.detail && <span className="text-ink-3"> · {e.detail}</span>}</> : e.detail ?? e.page ?? e.query ?? ""}
                     </td>
                   </tr>
                 ))}

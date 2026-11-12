@@ -1,6 +1,6 @@
 # Değişkenler deploy.env'den gelir:
 #   set -a; source deploy.env; set +a
-#   envsubst '$ECR_REGISTRY $PROM_DS_UID $TEMPO_DS_UID $AWS_PROD_ACCOUNT' < k8s.yaml | kubectl apply -f -
+#   envsubst '$ECR_REGISTRY $PROM_DS_UID $TEMPO_DS_UID $AWS_PROD_ACCOUNT $SRE_TEAM' < k8s.yaml | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -68,6 +68,10 @@ spec:
               value: /data
             - name: SLO_TARGETS_CONFIGMAP
               value: sre-portal-slo-targets
+            - name: STATE_CONFIGMAP
+              value: sre-portal-state
+            - name: SRE_TEAM
+              value: "${SRE_TEAM}"
             - name: PROM_DS_UID
               value: "${PROM_DS_UID}"
             - name: TEMPO_DS_UID
@@ -118,6 +122,13 @@ metadata:
   name: sre-portal-slo-targets
   namespace: mcp-llm-agent
 ---
+# Olay atamaları ve runbook'lar (portal kendisi doldurur; data yok ki apply mevcut veriyi silmesin)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-portal-state
+  namespace: mcp-llm-agent
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -133,7 +144,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["sre-portal-slo-targets"]
+    resourceNames: ["sre-portal-slo-targets", "sre-portal-state"]
     verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

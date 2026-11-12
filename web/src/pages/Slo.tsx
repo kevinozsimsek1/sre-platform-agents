@@ -31,11 +31,25 @@ export function SourcePill({ t }: { t: SloTarget }) {
     : <Pill tone="mute" title="Bu servis için hedef tanımlanmamış; varsayılan kullanılıyor">varsayılan</Pill>;
 }
 
-export function Trend({ v }: { v: SloService["trend"] }) {
-  if (v === "worse") return <span className="inline-flex items-center gap-1 text-crit"><ArrowDownRight size={14} /> kötüleşiyor</span>;
-  if (v === "better") return <span className="inline-flex items-center gap-1 text-good"><ArrowUpRight size={14} /> iyileşiyor</span>;
-  if (v === "same") return <span className="inline-flex items-center gap-1 text-ink-3"><Minus size={14} /> aynı</span>;
-  return <span className="text-ink-3">—</span>;
+/** Son hafta, 30 günlük ortalamayla kıyas: "yavaş istek %4,1 → %9,0" */
+export function Trend({ s, big = false }: { s: Pick<SloService, "trend" | "trend_detail">; big?: boolean }) {
+  const d = s.trend_detail;
+  if (!s.trend || !d) return <span className="text-ink-3">—</span>;
+  if (s.trend === "same") return <span className="inline-flex items-center gap-1 text-ink-3"><Minus size={14} /> değişmedi</span>;
+  const worse = s.trend === "worse";
+  const errs = d.by === "errors";
+  const f = (x: number) => fmtPct(x, errs ? (x < 0.001 ? 3 : 2) : 1);
+  const a = errs ? d.month.errors : d.month.slow;
+  const b = errs ? d.week.errors : d.week.slow;
+  const Icon = worse ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex flex-col ${big ? "gap-1" : ""}`}>
+      <span className={`inline-flex items-center gap-1 font-medium ${worse ? "text-crit" : "text-good"}`}>
+        <Icon size={14} /> {errs ? "hata" : "yavaş istek"} {f(a)} → {f(b)}
+      </span>
+      <span className="text-[12px] text-ink-3">{worse ? (errs ? "son hafta daha çok hata var" : "son hafta daha yavaş") : (errs ? "son hafta hata azaldı" : "son hafta hızlandı")}</span>
+    </span>
+  );
 }
 
 export default function Slo() {
@@ -87,12 +101,12 @@ export default function Slo() {
         <Stat value={count("low_traffic")} label={`az trafik (${fmtNum(d.min_requests)} istekten az, değerlendirilmez)`} />
       </div>
 
-      <Section title="Servisler" aside="Satıra tıklayınca route bazında detay ve hedef önerisi açılır">
+      <Section title="Servisler" aside="Satıra tıklayınca endpoint bazında detay ve loglar açılır">
         <Panel className="overflow-x-auto">
           <table className="w-full min-w-[1040px] text-[13.5px]">
             <thead><tr>
               <th className={th}>Servis</th><th className={th}>Durum</th><th className={th}>Hedef</th>
-              <th className={thr}>Hızlı yanıt</th><th className={thr}>Hatasız</th><th className={th}>Ne demek</th><th className={th}>Son 7 gün</th>
+              <th className={thr}>Hızlı yanıt</th><th className={thr}>Hatasız</th><th className={th}>Ne demek</th><th className={th} title="Son 7 gün, 30 günlük ortalamaya göre">Son hafta</th>
             </tr></thead>
             <tbody className="divide-y divide-edge-soft">
               {d.services.map((s) => {
@@ -113,7 +127,7 @@ export default function Slo() {
                     <td className={tdn}><span className={latBad ? "font-semibold text-crit" : ""}>{m ? pct(m.latency) : "—"}</span></td>
                     <td className={tdn}><span className={avBad ? "font-semibold text-crit" : ""}>{m ? pct(m.availability, 2) : "—"}</span></td>
                     <td className={td + " max-w-[300px] text-ink-2"}>{s.status === "low_traffic" ? "Değerlendirmek için yeterli istek yok." : s.explain}</td>
-                    <td className={td + " whitespace-nowrap text-[12.5px]"}><Trend v={s.trend} /></td>
+                    <td className={td + " whitespace-nowrap text-[12.5px]"}><Trend s={s} /></td>
                   </tr>
                 );
               })}

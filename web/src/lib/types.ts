@@ -29,8 +29,10 @@ export type Episode = { start: number; end: number | null; minutes: number; seri
 export type Incident = {
   id: string; start: number; end: number | null; ongoing: boolean; minutes: number; severity: "critical" | "warning" | "none";
   rules: RuleRef[]; episodes: number; series: number; offhours: boolean; night: boolean; preventable: boolean; analyses?: number;
-  after_change?: boolean; after_related_change?: boolean;
+  after_change?: boolean; after_related_change?: boolean; assignee?: Assignee | null;
 };
+export type Assignee = { to: string; at: number };
+export type Runbook = { text: string; at: number };
 
 export type AgentInfo = { id: string; label: string; description: string };
 export type AgentState = { items: any[]; running: { agent: string; started: number } | null };
@@ -53,6 +55,7 @@ export type RuleDetail = {
   incidents: Incident[];
   investigate: GuideItem[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
+  runbook: Runbook | null;
 };
 
 export type IncidentDetail = Incident & {
@@ -63,6 +66,7 @@ export type IncidentDetail = Incident & {
   investigate: { rule: string; key: string; guide: GuideItem[] }[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
   changes: ChangeBatch[];
+  runbooks: Record<string, Runbook>;
 };
 
 export type SloTarget = { availability: number; latency_ms: number; latency_target: number; source: "tanımlı" | "varsayılan"; owner: string | null; note: string | null; approx: boolean };
@@ -73,7 +77,10 @@ export type SloService = {
   allowed: { slow: number; errors: number };
   suggested?: { availability?: number; latency_ms?: number; latency_target?: number };  // sadece yönetim ekranında gelir
   p99_ms: number | null; p95_ms: number | null;
+  trend_detail?: { month: SloRates; week: SloRates; by: "slow" | "errors" } | null;
 };
+export type SloRates = { slow: number; errors: number };
+export type SloLogs = { group?: string; group_url?: string; errors: string; error_counts?: string; all: string };
 export type SloList = {
   fetched_at: number; window_days: number; min_requests: number;
   default: { availability: number; latency_ms: number; latency_target: number };

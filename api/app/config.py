@@ -15,6 +15,10 @@ GRAFANA_PASS = os.getenv("GRAFANA_PASS")
 GRAFANA_ORGS = [int(x) for x in _env("GRAFANA_ORGS", "3,1").split(",") if x.strip()]
 PROM_DS_UID = _env("PROM_DS_UID", "")    # SLO için kullanılan Prometheus datasource UID'i
 TEMPO_DS_UID = _env("TEMPO_DS_UID", "")  # "Nereden bakılır" trace linkleri için (isteğe bağlı)
+# Sadece prod: kuralın kullandığı bütün veri kaynaklarının adı buna uymalı. Boş bırakılırsa filtre kapanır.
+PROD_DS_PATTERN = _env("PROD_DS_PATTERN", "prod")
+# Kural adında bunlardan biri geçiyorsa prod sayılmaz (ör. "Pod Not Running - dev")
+NONPROD_TITLE_PATTERN = _env("NONPROD_TITLE_PATTERN", r"\b(dev|qa|uat|test|stag(e|ing)|bm)\b")
 AWS_PROD_ACCOUNT = _env("AWS_PROD_ACCOUNT", "")  # AWS linklerinde gösterilen hesap (isteğe bağlı)
 PROM_ORG = int(_env("PROM_ORG", "3"))
 
@@ -32,6 +36,10 @@ SLO_EXCLUDE_ROUTES = _env("SLO_EXCLUDE_ROUTES", "(?i).*(health|ready|live|metric
 
 GPU_CLUSTER = _env("GPU_CLUSTER", "llm-server")
 AWS_REGION = _env("AWS_REGION", "eu-central-1")
+# Olayların atanabileceği ekip (virgülle ayrılmış isimler). Boşsa atama kapalı.
+SRE_TEAM = [x.strip() for x in _env("SRE_TEAM", "").split(",") if x.strip()]
+# Servis loglarının CloudWatch'taki yeri: bu önekle başlayıp servis adıyla biten log grubu aranır
+LOG_GROUP_PREFIX = _env("LOG_GROUP_PREFIX", "/aws/containerinsights/")
 GPU_PRICES = json.loads(_env("GPU_PRICES_USD", '{"g6.xlarge": 1.0064}'))
 
 # Agent kayıt defteri. Yeni bir MCP agent'ı eklemek için AGENTS_JSON'a bir kayıt eklemek yeter:

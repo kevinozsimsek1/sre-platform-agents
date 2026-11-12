@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Incident } from "../lib/types";
 import { fmtDateTime, fmtMin } from "../lib/format";
+import { AssignPicker, useTeam } from "../components/Team";
 import { Empty, ErrorBox, Freshness, Loading, PageHeader, Panel, Pill, Severity, Stat, td, tdn, th, thr } from "../components/ui";
 
 type Resp = { fetched_at: number; gap_min: number; items: Incident[] };
@@ -16,6 +17,8 @@ export default function Incidents() {
   const [when, setWhen] = useState("");
   const [hideNoise, setHideNoise] = useState(false);
   const [days, setDays] = useState(7);
+  const [who, setWho] = useState("");
+  const team = useTeam();
 
   const items = useMemo(() => {
     if (!q.data) return [];
@@ -23,8 +26,9 @@ export default function Incidents() {
     return q.data.items.filter((i) =>
       i.start >= since && (!sev || i.severity === sev) &&
       (!when || (when === "off" ? i.offhours : when === "night" ? i.night : !i.offhours)) &&
-      (!hideNoise || !i.preventable));
-  }, [q.data, sev, when, hideNoise, days]);
+      (!hideNoise || !i.preventable) &&
+      (!who || (who === "-" ? !i.assignee : i.assignee?.to === who)));
+  }, [q.data, sev, when, hideNoise, days, who]);
 
   if (q.isLoading) return <Loading label="Olaylar hesaplanıyor" />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
@@ -42,7 +46,8 @@ export default function Incidents() {
       </PageHeader>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat value={ongoing.length} label="şu an açık olay" tone={ongoing.length ? "crit" : "good"} />
+        <Stat value={ongoing.length} label="şu an açık olay" tone={ongoing.length ? "crit" : "good"}
+          hint={team.length && ongoing.length ? `${ongoing.filter((i) => !i.assignee).length} tanesi kimseye atanmamış` : undefined} />
         <Stat value={items.length} label={`olay (son ${days} gün, filtreli)`} />
         <Stat value={items.filter((i) => i.offhours).length} label="mesai dışında başlayan" />
         <Stat value={items.filter((i) => i.preventable).length} label="sadece bilinen sorunlu kurallardan gelen" hint="Kurallar düzeltilirse büyük ihtimalle hiç oluşmazdı" />
@@ -60,14 +65,20 @@ export default function Incidents() {
         <select id="inc-when" value={when} onChange={(e) => setWhen(e.target.value)} className="rounded-md border border-edge bg-panel px-2.5 py-1 text-[13px]">
           <option value="">Her zaman</option><option value="work">Mesai içi</option><option value="off">Mesai dışı</option><option value="night">Gece (00–07)</option>
         </select>
+        {team.length > 0 && (
+          <select id="inc-who" value={who} onChange={(e) => setWho(e.target.value)} className="rounded-md border border-edge bg-panel px-2.5 py-1 text-[13px]">
+            <option value="">Herkes</option><option value="-">Atanmamış</option>
+            {team.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
         <label className="flex items-center gap-2 text-[13px] text-ink-2">
           <input id="inc-noise" type="checkbox" checked={hideNoise} onChange={(e) => setHideNoise(e.target.checked)} /> Bilinen gürültüyü gizle
         </label>
       </div>
 
       <Panel className="overflow-x-auto">
-        <table className="w-full min-w-[860px] text-[13.5px]">
-          <thead><tr><th className={th}>Başlangıç</th><th className={thr}>Süre</th><th className={th}>Seviye</th><th className={th}>Kurallar</th><th className={thr}>Alert</th><th className={th}>Not</th></tr></thead>
+        <table className="w-full min-w-[960px] text-[13.5px]">
+          <thead><tr><th className={th}>Başlangıç</th><th className={thr}>Süre</th><th className={th}>Seviye</th><th className={th}>Kurallar</th><th className={thr}>Alert</th><th className={th}>Not</th>{team.length > 0 && <th className={th}>Kimde</th>}</tr></thead>
           <tbody className="divide-y divide-edge-soft">
             {items.map((i) => (
               <tr key={i.id} className="cursor-pointer hover:bg-edge-soft/50" onClick={() => nav(`/incidents/${i.id}`)}>
@@ -89,6 +100,7 @@ export default function Incidents() {
                     {!!i.analyses && <Pill tone="accent">{i.analyses} analiz</Pill>}
                   </div>
                 </td>
+                {team.length > 0 && <td className={td}><AssignPicker iid={i.id} a={i.assignee} compact /></td>}
               </tr>
             ))}
           </tbody>

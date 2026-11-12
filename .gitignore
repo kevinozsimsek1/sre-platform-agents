@@ -8,3 +8,4 @@ __pycache__/
 deploy.env
 *-notlari.md
 api/data/
+*.tsbuildinfo

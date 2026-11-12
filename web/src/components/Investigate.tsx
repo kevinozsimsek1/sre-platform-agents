@@ -7,7 +7,7 @@ import { Panel } from "./ui";
 export type GuideLink = { label: string; url: string; kind: "grafana" | "aws" | string };
 export type GuideItem = { title: string; why: string; links: GuideLink[]; commands: string[] };
 
-function CopyLine({ cmd }: { cmd: string }) {
+export function CopyLine({ cmd }: { cmd: string }) {
   const [ok, setOk] = useState(false);
   return (
     <div className="flex items-start gap-2 rounded-md bg-edge-soft px-2.5 py-1.5">

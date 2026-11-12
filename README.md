@@ -95,6 +95,10 @@ API'nin okuduğu ortam değişkenleri:
 | `GRAFANA_ORGS` | Alert kurallarının olduğu org'lar, varsayılan `3,1` |
 | `PROM_DS_UID` | SLO hesabı için Prometheus datasource UID'i. Boş bırakırsan portal Grafana'dan kendisi bulur (adında "prod" geçeni seçer) |
 | `TEMPO_DS_UID` | Trace linkleri için Tempo datasource UID'i. Boş bırakırsan kendisi bulur |
+| `PROD_DS_PATTERN` | Portal sadece prod'u gösterir. Kuralın baktığı veri kaynaklarının hepsinin adında bu geçmeli, varsayılan `prod`. Boş bırakırsan filtre kapanır |
+| `NONPROD_TITLE_PATTERN` | Adında dev, qa, uat, test, staging ya da bm geçen kurallar alınmaz. Değiştirmek istersen regex yaz |
+| `SRE_TEAM` | Olayların atanabileceği kişiler, virgülle: `Ali,Ayşe,Mehmet`. Boş bırakırsan atama kapalı olur |
+| `LOG_GROUP_PREFIX` | Servis loglarının CloudWatch'taki yeri. Bu önekle başlayıp servis adıyla biten log grubu bulunur, varsayılan `/aws/containerinsights/` |
 | `AWS_PROD_ACCOUNT` | AWS linklerinin yanında gösterilen hesap numarası (zorunlu değil) |
 | `ADMIN_PASSWORD_HASH` | Denetim kaydı ekranının şifresi (aşağıya bak) |
 | `DATA_DIR` | Agent analizlerinin ve denetim kaydının yazıldığı klasör |
@@ -150,7 +154,7 @@ Secret'lar cluster'da olmalı: `sre-portal-grafana` (GRAFANA_URL, GRAFANA_USER, 
 Sonra manifesti uygula:
 
 ```bash
-envsubst '$ECR_REGISTRY $PROM_DS_UID $TEMPO_DS_UID $AWS_PROD_ACCOUNT' < k8s.yaml | kubectl apply -f -
+envsubst '$ECR_REGISTRY $PROM_DS_UID $TEMPO_DS_UID $AWS_PROD_ACCOUNT $SRE_TEAM' < k8s.yaml | kubectl apply -f -
 kubectl rollout restart deploy/agent-gateway -n mcp-llm-agent
 ```
 

@@ -5,6 +5,7 @@ import { ArrowRight, Bot, Cpu } from "lucide-react";
 import { api } from "../lib/api";
 import type { Finding, Incident, RuleRef, RuleRow, SloService } from "../lib/types";
 import { ago, fmtDateTime, fmtMin, fmtNum } from "../lib/format";
+import { AssigneeTag } from "../components/Team";
 import { Empty, ErrorBox, FINDING, Freshness, Loading, PageHeader, Panel, Pill, Section, Severity, Stat, type Tone } from "../components/ui";
 
 type Resp = {
@@ -107,6 +108,7 @@ export default function Overview() {
                 <Link key={i.id} to={`/incidents/${i.id}`} className="flex items-center gap-3 p-3.5 hover:bg-edge-soft/50">
                   <span className="w-28 shrink-0 font-mono text-[12px] text-ink-2">{fmtDateTime(i.start)}</span>
                   <span className="min-w-0 flex-1 truncate">{i.rules[0]?.title}{i.rules.length > 1 && <span className="text-ink-3"> +{i.rules.length - 1}</span>}</span>
+                  <AssigneeTag a={i.assignee} />
                   {i.ongoing ? <Pill tone="crit">açık</Pill> : <span className="font-mono text-[12px] text-ink-3">{fmtMin(i.minutes)}</span>}
                 </Link>
               ))}
