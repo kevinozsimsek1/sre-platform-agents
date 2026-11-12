@@ -88,25 +88,51 @@ def pct(a: float, b: float) -> float:
 
 
 # ---------------------------------------------------------------- ham veri
+# Trafiği azaltmak için: geçmiş günlerin alert kayıtları değişmediğinden saklanır, her yenilemede sadece
+# son RECENT_DAYS gün çekilir. Kural tanımları gibi nadiren değişen veriler de STATIC_TTL boyunca saklanır.
+# (Portal'dan Grafana'ya trafik NAT üzerinden gidiyor; her yenilemede 30 günü baştan çekmek ~8 MB'tı.)
+RECENT_DAYS = 2
+DAY_CACHE_TTL = 6 * 3600       # eski günler de bu sürede bir tazelenir
+STATIC_TTL = 30 * 60
+_day_cache: dict[tuple[int, int], tuple[float, list[dict]]] = {}
+_static_cache: dict[int, tuple[float, tuple]] = {}
+
+
 async def fetch_raw() -> dict[str, Any]:
     now = int(time.time() * 1000)
     start = now - config.WINDOW_DAYS * DAY_MS
+    first_day = start // DAY_MS * DAY_MS  # pencereler UTC gün başına sabit, böylece saklanabilir
+    t = time.time()
 
     async def per_org(org: int) -> dict[str, Any]:
-        rules, folders, ruler, policies, cps, dss = await asyncio.gather(
-            grafana.get("/api/v1/provisioning/alert-rules", org),
-            grafana.get("/api/folders", org, {"limit": 1000}),
-            grafana.get("/api/prometheus/grafana/api/v1/rules", org),
-            grafana.get("/api/v1/provisioning/policies", org),
-            grafana.get("/api/v1/provisioning/contact-points", org),
-            grafana.get("/api/datasources", org),
-        )
+        st = _static_cache.get(org)
+        if not st or t - st[0] > STATIC_TTL:
+            st = (t, await asyncio.gather(
+                grafana.get("/api/v1/provisioning/alert-rules", org),
+                grafana.get("/api/folders", org, {"limit": 1000}),
+                grafana.get("/api/v1/provisioning/policies", org),
+                grafana.get("/api/v1/provisioning/contact-points", org),
+                grafana.get("/api/datasources", org),
+            ))
+            _static_cache[org] = st
+        rules, folders, policies, cps, dss = st[1]
+        ruler = await grafana.get("/api/prometheus/grafana/api/v1/rules", org)  # anlık durum: her seferinde taze
 
-        async def window(a: int, b: int) -> list[dict]:
-            return await grafana.get("/api/annotations", org, {"type": "alert", "from": a, "to": b, "limit": 5000})
+        async def window(day: int) -> list[dict]:
+            key = (org, day)
+            hit = _day_cache.get(key)
+            old = day + DAY_MS < now - RECENT_DAYS * DAY_MS
+            if hit and old and t - hit[0] < DAY_CACHE_TTL:
+                return hit[1]
+            data = await grafana.get("/api/annotations", org, {"type": "alert", "from": day, "to": day + DAY_MS, "limit": 5000})
+            _day_cache[key] = (t, data)
+            return data
 
-        chunks = await asyncio.gather(*[window(a, min(a + DAY_MS, now)) for a in range(start, now, DAY_MS)])
-        ann = {x["id"]: x for c in chunks for x in c}
+        days = list(range(first_day, now, DAY_MS))
+        for k in [k for k in _day_cache if k[0] == org and k[1] < first_day]:
+            del _day_cache[k]  # pencereden çıkan günleri unut
+        chunks = await asyncio.gather(*[window(d) for d in days])
+        ann = {x["id"]: x for c in chunks for x in c if x["time"] >= start}
         return {
             "org": org,
             "rules": rules,
