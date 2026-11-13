@@ -90,7 +90,7 @@ export type SloList = {
   services: SloService[];
 };
 
-export type ChangeItem = { namespace: string; deployment: string; kind: "release" | "restart" | "unknown"; version: string | null; prev_version: string | null; t_ms: number };
+export type ChangeItem = { namespace: string; deployment: string; kind: "release" | "restart" | "unknown"; version: string | null; prev_version: string | null; prev_since_ms?: number | null; prev_since_exact?: boolean | null; t_ms: number };
 export type ChangeBatch = {
   id: string; start: number; end: number; deployments: number; releases: number; restarts: number; mass: boolean;
   items: ChangeItem[]; incidents_after?: Incident[]; minutes_before?: number; related?: boolean;

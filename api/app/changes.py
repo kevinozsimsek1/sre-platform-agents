@@ -65,6 +65,8 @@ async def collect() -> dict[str, Any]:
     patterns: list[dict] = []
     for (ns, dep), items in per_dep.items():
         items.sort(key=lambda x: x["t"])
+        run_start = None  # şu an çalışan image'ın prod'a ilk geldiği an
+        run_exact = False  # False: görünen en eski kayıt; sürüm aslında daha önce gelmiş olabilir
         for i, e in enumerate(items):
             prev = items[i - 1]["images"] if i else None
             if prev is None:
@@ -77,6 +79,10 @@ async def collect() -> dict[str, Any]:
             e["version"] = " + ".join(_version(x) for x in e["images"][:2]) if e["images"] else None
             e["prev_version"] = " + ".join(_version(x) for x in prev[:2]) if prev else None
             e["t_ms"] = e["t"] * 1000
+            e["prev_since_ms"] = run_start * 1000 if (kind == "release" and run_start is not None) else None
+            e["prev_since_exact"] = run_exact if kind == "release" else None
+            if kind != "restart" or run_start is None:
+                run_start, run_exact = e["t"], kind == "release"
             events.append(e)
         # Her gün aynı saatte (10 dk dilim) tekrar eden değişiklik
         slots = Counter()
@@ -106,7 +112,7 @@ async def collect() -> dict[str, Any]:
             "id": f"{b['start']}", "start": b["start"] * 1000, "end": b["end"] * 1000, "deployments": n,
             "releases": kinds["release"], "restarts": kinds["restart"], "unknown": kinds["unknown"],
             "mass": n >= MASS_MIN,
-            "items": [{k: e[k] for k in ("namespace", "deployment", "kind", "version", "prev_version", "t_ms")} for e in b["events"]],
+            "items": [{k: e[k] for k in ("namespace", "deployment", "kind", "version", "prev_version", "prev_since_ms", "prev_since_exact", "t_ms")} for e in b["events"]],
         })
     out_batches.reverse()
 
