@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Bot, Cpu } from "lucide-react";
+import { ArrowRight, Bot } from "lucide-react";
 import { api } from "../lib/api";
 import type { Finding, Incident, RuleRef, RuleRow, SloService } from "../lib/types";
 import { ago, fmtDateTime, fmtMin, fmtNum } from "../lib/format";
@@ -21,7 +21,7 @@ type Resp = {
 type Health = "checking" | "up" | "down";
 const AGENTS = [
   { id: "cloudwatch", name: "CloudWatch agent", href: "/cloudwatch/", probe: "/cloudwatch/ready" },
-  { id: "eks", name: "EKS agent", href: "/eks/", probe: "/eks/ready" },
+  { id: "eks", name: "EKS agent", href: "/eks/", probe: "/eks/health" },  // EKS agent'ta /ready yok, /health var
 ];
 const H: Record<Health, { tone: Tone; label: string }> = { checking: { tone: "mute", label: "kontrol ediliyor" }, up: { tone: "good", label: "hazır" }, down: { tone: "mute", label: "kapalı" } };
 
@@ -148,8 +148,8 @@ export default function Overview() {
         </Panel>
       </Section>
 
-      <Section title="Agent altyapısı">
-        <div className="grid gap-3 sm:grid-cols-3">
+      <Section title="Agent sohbetleri">
+        <div className="grid gap-3 sm:grid-cols-2">
           {AGENTS.map((a) => {
             const h = H[health[a.id] ?? "checking"];
             return (
@@ -162,20 +162,8 @@ export default function Overview() {
               </a>
             );
           })}
-          <Link to="/value" className="group">
-            <Panel className="flex h-full items-center gap-3 p-4 transition-colors group-hover:border-accent">
-              <span className="grid size-9 place-items-center rounded-md bg-edge-soft text-ink-2"><Cpu size={18} /></span>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="font-semibold">GPU (vLLM)</span>
-                <span className="text-[12.5px] text-ink-3">
-                  {d.gpu.available ? `30 günde ${(d.gpu.hours ?? 0).toLocaleString("tr-TR")} sa · $${(d.gpu.cost_usd ?? 0).toLocaleString("tr-TR")}` : "geçmiş okunamadı"}
-                </span>
-              </div>
-              {d.gpu.available && <Pill tone={d.gpu.running ? "good" : "mute"}>{d.gpu.running ? "açık" : "kapalı"}</Pill>}
-            </Panel>
-          </Link>
         </div>
-        <p className="text-[12.5px] text-ink-3">Veri {ago(d.fetched_at)} toplandı. Agent'lar ve model GPU node açıkken çalışır.</p>
+        <p className="text-[12.5px] text-ink-3">Veri {ago(d.fetched_at)} toplandı.</p>
       </Section>
     </>
   );

@@ -51,8 +51,9 @@ spec:
               cpu: 200m
               memory: 64Mi
         # Portal API: Grafana/Prometheus'tan salt-okuma veri, agent analizleri, denetim kaydı.
+        # Image, agent-gateway reposunda "api" etiketiyle durur: ayrı repo açma yetkisi yok, aynı repoya push yetkisi var.
         - name: portal-api
-          image: ${ECR_REGISTRY}/sre-portal-api:latest
+          image: ${ECR_REGISTRY}/agent-gateway:api
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

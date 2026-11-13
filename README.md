@@ -146,8 +146,10 @@ set -o pipefail
 set -a; source deploy.env; set +a
 aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin $ECR_REGISTRY
 docker buildx build --platform linux/amd64 -t $ECR_REGISTRY/agent-gateway:latest --push .
-docker buildx build --platform linux/amd64 -t $ECR_REGISTRY/sre-portal-api:latest --push api
+docker buildx build --platform linux/amd64 -t $ECR_REGISTRY/agent-gateway:api --push api
 ```
+
+API image'ı ayrı bir repoya değil, `agent-gateway` reposuna `api` etiketiyle gider (ayrı repo açma yetkisi yok).
 
 Secret'lar cluster'da olmalı: `sre-portal-grafana` (GRAFANA_URL, GRAFANA_USER, GRAFANA_PASS) ve `sre-portal-admin` (ADMIN_USER, ADMIN_PASSWORD_HASH).
 
