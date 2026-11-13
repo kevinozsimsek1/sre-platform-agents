@@ -90,15 +90,26 @@ export type SloList = {
   services: SloService[];
 };
 
-export type ChangeItem = { namespace: string; deployment: string; kind: "release" | "restart" | "unknown"; version: string | null; prev_version: string | null; prev_since_ms?: number | null; prev_since_exact?: boolean | null; t_ms: number };
+export type ChangeItem = {
+  namespace: string; deployment: string; replicaset?: string;
+  /** release: image değişti · rollback: eski bir ReplicaSet'e dönüldü · new: deployment prod'a ilk kez çıktı · restart: aynı image · unknown: image bilgisi yok */
+  kind: "release" | "rollback" | "new" | "restart" | "unknown";
+  version: string | null; prev_version: string | null;
+  /** Önceki sürümün başlangıcı; exact=false ise görünen en eski kayıt ("en az … beri") */
+  prev_since_ms?: number | null; prev_since_exact?: boolean | null;
+  t_ms: number;
+};
 export type ChangeBatch = {
-  id: string; start: number; end: number; deployments: number; releases: number; restarts: number; mass: boolean;
+  id: string; start: number; end: number; deployments: number; releases: number; restarts: number; rollbacks?: number; new?: number; mass: boolean;
   items: ChangeItem[]; incidents_after?: Incident[]; minutes_before?: number; related?: boolean;
 };
 export type Changes = {
   fetched_at: number;
-  stats: { releases: number; restarts: number; batches: number; mass: number; deployments: number };
+  window_days: number;
+  stats: { releases: number; restarts: number; rollbacks: number; new: number; unknown: number; batches: number; mass: number; deployments: number };
   batches: ChangeBatch[];
   schedules: { time: string; deployments: number; days: number; names: string[] }[];
+  /** Şu an en yeni ReplicaSet'ini değil daha eskisini çalıştıran deployment'lar (geri alınmış durumda) */
+  rolled_back: { namespace: string; deployment: string; running: string[]; newest: string }[];
   correlation: { incidents: number; after_change: number; since: number | null };
 };

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, Undo2 } from "lucide-react";
 import { api } from "../lib/api";
 import type { Changes as C } from "../lib/types";
 import { fmtDate, fmtNum } from "../lib/format";
@@ -22,7 +22,7 @@ export default function Changes() {
       const slot = hm.slice(0, 4) + "0";
       const scheduled = b.releases === 0 && sched.has(slot);
       if (hideScheduled && scheduled && !(b.incidents_after?.length)) return false;
-      if (filter === "release") return b.releases > 0;
+      if (filter === "release") return b.releases + (b.rollbacks ?? 0) + (b.new ?? 0) > 0;
       if (filter === "incident") return (b.incidents_after?.length ?? 0) > 0;
       return true;
     });
@@ -46,17 +46,41 @@ export default function Changes() {
       <PageHeader eyebrow="Değişiklik takibi" title="Prod'da ne değişti"
         actions={<Freshness at={d.fetched_at} busy={q.isFetching} onRefresh={() => qc.fetchQuery({ queryKey: ["changes"], queryFn: () => api("/changes?refresh=true") })} />}>
         <p className="max-w-[78ch] text-[15px] text-ink-2">
-          Prod cluster'ındaki deploy ve yeniden başlatmalar, ve her birinden sonraki bir saat içinde başlayan olaylar. Bir olay olduğunda ilk sorulan soru
+          Prod cluster'ındaki yeni sürümler, geri almalar ve yeniden başlatmalar; her birinden sonraki bir saat içinde başlayan olaylar. Bir olay olduğunda ilk sorulan soru
           "son ne değişti?" olduğu için olay sayfalarında da bu bilgi görünür.
+        </p>
+        <p className="max-w-[78ch] text-[13.5px] text-ink-3">
+          Kaynak: Prometheus'taki pod kayıtları (kube-state-metrics), son {d.window_days} gün. Bir deployment'ın pod'larını açan ReplicaSet değiştiği an bir değişikliktir:
+          image farklıysa yeni sürüm, aynıysa yeniden başlatma, daha eski bir ReplicaSet'e dönüldüyse geri alma. Ölçekleme değişiklik sayılmaz.
+          "En az … beri" yazan yerlerde sürümün başlangıcı {d.window_days} günden eski olduğu için tam tarih bilinmiyor; gösterilen, görünen en eski kayıttır.
         </p>
       </PageHeader>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat value={fmtNum(d.stats.releases)} label="yeni sürüm (image değişti)" />
+        <Stat value={fmtNum(d.stats.releases)} label="yeni sürüm (image değişti)"
+          hint={[d.stats.rollbacks ? `${d.stats.rollbacks} geri alma` : "", d.stats.new ? `${d.stats.new} yeni deployment` : ""].filter(Boolean).join(" · ") || undefined} />
         <Stat value={fmtNum(d.stats.restarts)} label="yeniden başlatma / ayar değişikliği" />
         <Stat value={fmtNum(d.stats.mass)} label="toplu değişiklik (5+ deployment birlikte)" />
         <Stat value={c.incidents ? `${c.after_change} / ${c.incidents}` : "—"} label="olay bir değişiklikten sonraki 1 saatte başladı" hint={c.since ? `${fmtDate(c.since)}'den beri` : undefined} />
       </div>
+
+      {d.rolled_back.length > 0 && (
+        <Panel className="flex items-start gap-3 border-warn/40 p-4">
+          <Undo2 size={18} className="mt-0.5 shrink-0 text-warn" />
+          <div className="flex flex-col gap-1.5 text-[14px]">
+            <b className="font-semibold">{d.rolled_back.length} deployment şu an en son sürümünü değil, daha eski bir ReplicaSet'i çalıştırıyor (geri alınmış durumda)</b>
+            <ul className="flex flex-col gap-1 font-mono text-[12.5px] text-ink-2">
+              {d.rolled_back.map((r) => (
+                <li key={r.namespace + r.deployment}>
+                  <span className="text-ink-3">{r.namespace}/</span><span className="font-medium text-ink">{r.deployment}</span>
+                  <span> · çalışan: {r.running.join(", ")} · en yeni: {r.newest}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-ink-2">Kontrol: <code className="font-mono text-[12.5px]">kubectl -n &lt;ns&gt; rollout history deployment/&lt;ad&gt;</code></p>
+          </div>
+        </Panel>
+      )}
 
       {d.schedules.length > 0 && (
         <Panel className="flex items-start gap-3 border-warn/40 p-4">
@@ -80,9 +104,9 @@ export default function Changes() {
         </Panel>
       )}
 
-      <Section title="Zaman çizelgesi" aside="Kubernetes her deployment için son ~10 değişikliği tutar; daha eskisi görünmez">
+      <Section title="Zaman çizelgesi" aside={`Son ${d.window_days} gün; daha eskisi Prometheus'ta tutulmuyor`}>
         <div className="flex flex-wrap items-center gap-2">
-          {([["all", "Hepsi"], ["release", "Sadece yeni sürümler"], ["incident", "Sonrasında olay olanlar"]] as const).map(([k, l]) => (
+          {([["all", "Hepsi"], ["release", "Sadece sürüm değişiklikleri"], ["incident", "Sonrasında olay olanlar"]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => setFilter(k)}
               className={`rounded-md border px-2.5 py-1 text-[13px] ${filter === k ? "border-accent bg-accent-soft text-accent" : "border-edge text-ink-2"}`}>{l}</button>
           ))}
