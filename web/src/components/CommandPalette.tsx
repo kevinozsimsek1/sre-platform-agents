@@ -17,6 +17,7 @@ const PAGES: Item[] = [
   { to: "/cluster", label: "Cluster durumu (pod, node, sertifika, disk)" },
   { to: "/slo", label: "Servis hedefleri (SLO)" },
   { to: "/value", label: "Maliyet ve değer" },
+  { to: "/architecture", label: "Sinyal haritası (mimari, veri nereden geliyor)" },
   { to: "/admin", label: "Yönetim (denetim kaydı, servis hedefleri)" },
 ].map((p) => ({ ...p, group: "Sayfalar", icon: <FileText size={15} />, text: p.label }));
 

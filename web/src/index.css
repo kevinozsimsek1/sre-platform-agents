@@ -100,3 +100,16 @@
   h1, h2, h3 { text-wrap: balance; }
   :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 }
+
+/* Sinyal haritası: okların üzerinde akan noktalar. Sinyalin yönünü gösterir. */
+@keyframes signal-dash { to { stroke-dashoffset: -40; } }
+.signal-flow {
+  stroke-dasharray: 5 15;
+  stroke-linecap: round;
+  animation: signal-dash 1.9s linear infinite;
+}
+.signal-flow.signal-fast { stroke-dasharray: 7 11; animation-duration: 0.95s; }
+.signal-still .signal-flow { animation: none; stroke-dasharray: 4 7; }
+@media (prefers-reduced-motion: reduce) {
+  .signal-flow { animation: none; stroke-dasharray: 4 7; }
+}

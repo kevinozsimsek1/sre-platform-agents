@@ -93,14 +93,13 @@ export default function Value() {
         actions={<Freshness at={t.fetched_at} busy={q.isFetching} onRefresh={() => qc.fetchQuery({ queryKey: ["value"], queryFn: () => api("/value?refresh=true") })} />}>
         <p className="max-w-[80ch] text-[15px] text-ink-2">
           Altyapı faturası değil, operasyonun maliyeti: alert'lerin nöbetçiden aldığı zaman ve uyku, ve bu portalı çalıştıran GPU'nun gerçek maliyeti.
-          Ölçüler Google SRE'nin nöbet ve toil ilkelerine göre hesaplanır.
         </p>
       </PageHeader>
 
       <Section title="Nöbet yükü (son 30 gün)">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Stat value={T.per_day.toLocaleString("tr-TR")} label="olay / gün" hint={`${fmtNum(T.incidents)} olay, ${fmtNum(T.critical)}'i critical`} />
-          <Stat value={`${T.shifts_over} / ${T.shifts}`} label="vardiyada 2'den fazla olay" tone={T.shifts_over > T.shifts * 0.25 ? "crit" : undefined} hint="Google SRE: 12 saatlik vardiyada en fazla 2 olay sürdürülebilir" />
+          <Stat value={`${T.shifts_over} / ${T.shifts}`} label="vardiyada 2'den fazla olay" tone={T.shifts_over > T.shifts * 0.25 ? "crit" : undefined} hint="12 saatlik vardiya (gündüz 08–20, gece 20–08); 2'den fazla olay düşen vardiya sayısı" />
           <Stat value={fmtNum(T.offhours)} label="mesai dışında başlayan olay" hint={`${fmtNum(T.night)}'i gece 00–07 arası`} tone={T.night > 5 ? "warn" : undefined} />
           <Stat value={fmtNum(T.preventable)} label="sadece bilinen sorunlu kurallardan gelen olay" tone="good" hint={<Link to="/alerts" className="text-accent">Bulguları gör</Link>} />
         </div>

@@ -666,7 +666,7 @@ def toil(m: Model) -> dict:
     for i in inc:
         t = local(i["start"])
         heat[t.weekday()][t.hour] += 1
-    # Google SRE: 12 saatlik nöbet vardiyasında en fazla 2 olay sürdürülebilir kabul edilir.
+    # 12 saatlik vardiyalara böl (gündüz 08–20, gece 20–08) ve 2'den fazla olay düşen vardiyaları say.
     shifts: Counter = Counter()
     for i in inc:
         t = local(i["start"])
