@@ -60,7 +60,7 @@ Kapatmak için:
 docker rm -f portal-api portal-web
 ```
 
-## Kodu değiştireceksen: geliştirme modu
+## Kodu değiştireceksen
 
 Burada her şey kaydettiğin anda yenileniyor, tekrar build almana gerek yok.
 
