@@ -49,18 +49,27 @@ export default function Work() {
   const pick = (v: string) => { setPerson(v); save(v); };
   const shown = person ? d.people.filter((p) => p.name === person) : d.people;
   const openTotal = d.people.reduce((n, p) => n + p.open.length, 0);
+  const costOf = (name: string) => (d.cost_tasks ?? []).filter((t) => t.assignee?.to === name);
+  const costOpen = (d.cost_tasks ?? []).filter((t) => !t.assignee?.done_at);
+  const costSaving = costOpen.reduce((n, t) => n + (t.saving_usd ?? 0), 0);
 
   return (
     <>
       <PageHeader eyebrow="Ekip" title="Atanan işler">
         <p className="max-w-[76ch] text-[15px] text-ink-2">
-          Kimde hangi olay var, ne bitti. Olay, olay sayfasından ya da olaylar listesinden birine atanır; iş bitince "Tamamlandı" denir.
-          Atamalar 90 gün saklanır, her değişiklik denetim kaydına düşer.
+          Kimde hangi iş var, ne bitti. İki tür iş görünür: prod'da başlayan <b className="font-semibold">olaylar</b> ve
+          Sorgu maliyeti sayfasından atanan <b className="font-semibold">maliyet görevleri</b>. İş bitince "Tamamlandı" denir.
+        </p>
+        <p className="max-w-[76ch] text-[13.5px] text-ink-3">
+          Atamalar pod'un diskinde değil, cluster'daki <span className="font-mono text-[12.5px]">sre-portal-state</span> ConfigMap'inde
+          saklanır; portal yeniden başlasa da kaybolmaz. Olay atamaları 90, maliyet görevleri 180 gün tutulur.
+          Her atama ve tamamlama, kim yaptıysa adıyla denetim kaydına düşer.
         </p>
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {[{ name: "", label: `Herkes (${openTotal})` }, ...d.people.map((p) => ({ name: p.name, label: `${p.name} (${p.open.length})` }))].map((x) => (
+        {[{ name: "", label: `Herkes (${openTotal + costOpen.length})` },
+          ...d.people.map((p) => ({ name: p.name, label: `${p.name} (${p.open.length + costOf(p.name).filter((t) => !t.assignee?.done_at).length})` }))].map((x) => (
           <button key={x.name || "all"} type="button" onClick={() => pick(x.name)}
             className={`rounded-full border px-3 py-1 text-[13px] ${person === x.name ? "border-accent bg-accent-soft font-medium text-accent" : "border-edge text-ink-2 hover:text-ink"}`}>
             {x.label}
@@ -70,6 +79,16 @@ export default function Work() {
           <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Tamamlananları göster
         </label>
       </div>
+
+      {costOpen.length > 0 && (
+        <Panel className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3.5 text-[13.5px]">
+          <span className="text-ink-2">
+            <b className="font-semibold text-ink">{costOpen.length}</b> açık maliyet görevi
+            {costSaving > 0 && <> · hesaplanabilen kazanç <b className="font-semibold text-good">${costSaving.toFixed(2)}</b>/ay</>}
+          </span>
+          <Link to="/query-cost" className="ml-auto font-medium text-accent">Sorgu maliyeti sayfası</Link>
+        </Panel>
+      )}
 
       {d.unassigned.length > 0 && (
         <Section title="Kimseye atanmamış açık olaylar" aside={`${d.unassigned.length} olay`}>
@@ -94,8 +113,28 @@ export default function Work() {
               <span className="text-[15px] font-semibold">{p.name}</span>
               <span className="text-[12.5px] text-ink-3">{p.open.length} açık · {p.done_total} tamamlanan</span>
             </div>
-            {p.open.length === 0 ? <p className="p-4 text-[13.5px] text-ink-3">Üzerinde açık iş yok.</p> : (
+            {p.open.length === 0 && costOf(p.name).length === 0 ? <p className="p-4 text-[13.5px] text-ink-3">Üzerinde açık iş yok.</p> : (
               <div className="divide-y divide-edge-soft">{p.open.map((w) => <Item key={w.id} w={w} />)}</div>
+            )}
+            {costOf(p.name).filter((t) => showDone || !t.assignee?.done_at).length > 0 && (
+              <>
+                <div className="border-t border-edge-soft px-4 pt-3 text-[11px] font-semibold tracking-wider text-ink-3 uppercase">Maliyet görevleri</div>
+                <div className="divide-y divide-edge-soft">
+                  {costOf(p.name).filter((t) => showDone || !t.assignee?.done_at).map((t) => (
+                    <div key={t.id} className={`flex items-start gap-3 p-3.5 ${t.assignee?.done_at ? "opacity-70" : ""}`}>
+                      <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className={`min-w-0 font-medium ${t.assignee?.done_at ? "line-through" : ""}`}>{t.title}</span>
+                        <span className="flex flex-wrap items-center gap-2 text-[12px] text-ink-3">
+                          {t.assignee?.done_at ? <Pill tone="good">tamamlandı</Pill> : <Pill tone="accent">açık</Pill>}
+                          <span>{t.where}</span>
+                          {t.saving_usd != null && <span className="font-mono font-medium text-good">${t.saving_usd.toFixed(2)}/ay kazanç</span>}
+                        </span>
+                      </div>
+                      <Link to="/query-cost" className="shrink-0 text-[12.5px] font-medium text-accent">Aç</Link>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
             {showDone && p.done.length > 0 && (
               <>

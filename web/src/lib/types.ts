@@ -37,6 +37,7 @@ export type Work = {
   fetched_at: number;
   people: { name: string; open: WorkItem[]; done: WorkItem[]; done_total: number }[];
   unassigned: { id: string; title: string; more: number; severity: string; start: number; ongoing: boolean; minutes: number }[];
+  cost_tasks: CostTask[];
 };
 
 export type AgentInfo = { id: string; label: string; description: string };
@@ -60,6 +61,100 @@ export type RuleDetail = {
   incidents: Incident[];
   investigate: GuideItem[];
   analysis: AgentState; agents: AgentInfo[]; agent_suggestion: { agent: string; reason: string };
+  fix: Fix | null;
+};
+
+/** Grafana sorgularının AWS'ye çıkardığı maliyet. */
+export type CostRule = {
+  org: number; uid: string; title: string; group: string;
+  every_s: number; every_known: boolean; evals_month: number;
+  metric_queries: number; expands: number; math: number; metric_cost_month: number; uncertain: boolean;
+  metrics_per_eval?: number; load_month?: number;
+  real_metrics_month: number | null; real_cost_month: number | null;
+  logs: { window_min: number; groups: string[]; overlap: number | null }[];
+};
+export type CostQuery = { kind: "metric" | "logs"; text: string; period_s: number | null; metrics: number | null; expands: boolean; math: boolean; tips: string[] };
+export type CostWidget = {
+  title: string; type: string | null; repeat: boolean; panel_id?: number | null;
+  metrics_per_refresh?: number;
+  metric_queries: number; logs_queries: number; expands: number; math: number;
+  queries: CostQuery[];
+  real_metrics_month: number | null; real_cost_month: number | null;
+};
+export type CostDashboard = {
+  org: number; uid: string; title: string; folder: string;
+  refresh: string | null; every_s: number | null; panels: number; hidden_panels: number;
+  cloudwatch_metric: number; cloudwatch_logs: number; prometheus: number; other: number; unknown: number;
+  expands: number; math: number; repeats: number; uncertain: boolean;
+  metrics_per_refresh?: number;
+  cost_month_if_open: number; url: string; settings_url?: string;
+  load_month: number; real_metrics_month: number | null; real_cost_month: number | null;
+  widgets: CostWidget[];
+};
+export type BillItem = { usage_type: string; label: string; what: string; cost: number; quantity: number };
+export type Bill =
+  | { available: false; reason: string }
+  | {
+      available: true; fetched_at: number; account: string | null; service: string;
+      months: { start: string; end: string; partial: boolean; total: number; items: BillItem[] }[];
+      last_full: { start: string; end: string; partial: boolean; total: number; items: BillItem[] };
+      current: { start: string; end: string; partial: boolean; total: number; items: BillItem[] };
+      gmd: { cost: number; quantity: number };
+      scanned: { cost: number; quantity: number };
+      ingest: { cost: number; quantity: number };
+    };
+export type Attribution = {
+  available: boolean;
+  real_metrics_month: number; real_cost_month: number; usd_per_metric: number;
+  rule_load_month: number; dashboard_load_month: number; total_load_month: number;
+  rule_metrics_month: number | null; dashboard_metrics_month: number | null;
+  rule_cost_month: number | null; dashboard_cost_month: number | null;
+  rule_share: number | null; load_vs_billed: number | null; measured: boolean;
+  period: string | null;
+};
+
+/** Tamamlanan iyileştirmeler ve kazandırdıkları. */
+export type Savings = {
+  done: { id: string; title: string; kind: string | null; to: string | null; done_at: number;
+          saving_usd: number | null; months_since: number; accrued_usd: number; still_fixed: boolean }[];
+  count: number; monthly_usd: number; accrued_usd: number;
+  regressed: { id: string; title: string }[];
+  first_done_at: number | null; open_potential_usd: number;
+};
+/** Maliyet bulgusundan türeyen, kişiye atanabilir iyileştirme görevi. */
+export type CostTask = {
+  id: string; kind: string; severity: "crit" | "warn" | "info";
+  title: string; fix: string; why: string;
+  saving_usd: number | null; current_usd: number | null; saving_note: string;
+  where: string; links: { label: string; url: string }[]; math?: string[];
+  assignee: { to: string; at: number; done_at?: number | null; title?: string } | null;
+};
+
+export type QueryCost = {
+  fetched_at: number;
+  bill: Bill;
+  attribution: Attribution;
+  tasks: CostTask[];
+  savings: Savings;
+  team: string[];
+  price: { metric_per_1k: number; logs_per_gb: number };
+  summary: {
+    rules: number; rule_metric_cost_month: number; log_rules: number; log_rule_scans_month: number; worst_overlap: number;
+    dashboards: number; dashboards_cw: number; dashboards_fast: number; dashboard_cost_month_if_all_open: number;
+    uncertain_rules: number; uncertain_dashboards: number; hidden_panels: number; unknown_targets: number; expanding_targets: number;
+  };
+  rules: CostRule[];
+  log_rules: CostRule[];
+  dashboards: CostDashboard[];
+};
+
+/** Bulgulardan türetilen uygulanabilir değişiklikler. Portal bunları uygulamaz, sadece hazırlar. */
+export type FixChange = { field: string; label: string; from: string | number | boolean | null; to: string | number | boolean | null; code: string; why: string };
+export type Fix = {
+  changes: FixChange[];
+  manual: { code: string; what: string }[];
+  rule: Record<string, unknown> | null;
+  uid: string; org: number;
 };
 
 export type IncidentDetail = Incident & {
@@ -113,3 +208,34 @@ export type Changes = {
   rolled_back: { namespace: string; deployment: string; running: string[]; newest: string }[];
   correlation: { incidents: number; after_change: number; since: number | null };
 };
+
+/** Log gruplarının alım ve saklama maliyeti. */
+export type LogGroupCost = {
+  name: string; stored_gb: number; retention_days: number | null; class: string;
+  ingest_gb: number; ingest_usd: number; storage_usd: number; total_usd: number; flags: string[];
+};
+export type LogCost =
+  | { available: false; reason: string; bill?: Bill }
+  | {
+      available: true; fetched_at: number; window_days: number;
+      rates: { ingest_usd_per_gb: number; storage_usd_per_gb_month: number; scan_usd_per_gb?: number };
+      summary: {
+        groups: number; ingest_gb: number; ingest_usd: number; stored_gb: number; storage_usd: number;
+        no_retention: number; no_retention_gb: number; dead: number; dead_gb: number; top10_share: number;
+      };
+      groups: LogGroupCost[];
+      no_retention: string[];
+      dead: { name: string; stored_gb: number }[];
+      bill: Bill;
+    };
+
+/** Bir log grubunun içinde ne olduğu: kısa örnek pencere taranıp bileşene göre kırılır. */
+export type LogBreakdown =
+  | { available: false; reason: string }
+  | {
+      available: true; group: string; minutes: number; fetched_at: number;
+      full: boolean; scale_factor: number;
+      sample_mb: number; projected_month_gb: number; streams: number;
+      scan_gb: number; scan_usd: number;
+      parts: { name: string; share: number; sample_mb: number; lines: number; streams: number; month_gb: number; month_usd: number }[];
+    };

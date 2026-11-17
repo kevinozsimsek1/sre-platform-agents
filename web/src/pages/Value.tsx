@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { fmtDate, fmtDateTime, fmtNum } from "../lib/format";
+import { ago, fmtDate, fmtDateTime, fmtNum } from "../lib/format";
 import BarChart from "../components/BarChart";
 import { ErrorBox, Freshness, Loading, PageHeader, Panel, Pill, Section, Stat, td, tdn, th, thr } from "../components/ui";
 
@@ -20,7 +20,7 @@ type Resp = {
     sources: { key: string; title: string; incidents: number }[];
   };
   gpu: {
-    available: boolean; reason?: string; hours?: number; cost_usd?: number; running?: boolean; failed_launches?: number;
+    available: boolean; reason?: string; hours?: number; cost_usd?: number; running?: boolean; failed_launches?: number; fetched_at?: number;
     sessions?: { nodegroup: string; instance_type: string; start: number; end: number | null; hours: number; cost_usd: number; running: boolean }[];
     failures?: { nodegroup: string; instance_type: string; t: number; reason: string }[];
     nodegroups?: { nodegroup: string; instance_type: string; price_usd_h: number | null; desired: number }[];
@@ -207,16 +207,22 @@ export default function Value() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Stat value={`${(g.hours ?? 0).toLocaleString("tr-TR")} sa`} label="GPU açık kaldı (30 gün)" hint={g.running ? <Pill tone="good">şu an açık</Pill> : <Pill tone="mute">şu an kapalı</Pill>} />
+              <Stat value={`${(g.hours ?? 0).toLocaleString("tr-TR")} sa`} label="GPU açık kaldı (30 gün)"
+                hint={
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {g.running ? <Pill tone="good">açık</Pill> : <Pill tone="mute">kapalı</Pill>}
+                    {g.fetched_at && <span>{ago(g.fetched_at)} AWS'den okundu</span>}
+                  </span>
+                } />
               <Stat value={`$${(g.cost_usd ?? 0).toLocaleString("tr-TR")}`} label="GPU maliyeti (on-demand fiyatla)" />
-              <Stat value={fmtNum(analyses)} label="agent analizi yapıldı" hint={analyses ? `analiz başına ~$${((g.cost_usd ?? 0) / analyses).toFixed(2)}` : "henüz yok"} />
+              <Stat value={fmtNum(analyses)} label="portalden başlatılan agent araştırması" hint="GPU bunun için değil, agent'lar ve model sürekli ayakta kalsın diye açılıyor" />
               <Stat value={fmtNum(g.failed_launches)} label="başarısız GPU açma denemesi" tone={(g.failed_launches ?? 0) > 20 ? "warn" : undefined} hint="AWS'de o an kapasite yok" />
             </div>
             <Panel className="flex flex-col gap-2 p-4 text-[14px]">
               <p>
-                Karşılaştırma: aynı dönemde nöbetçinin alert'lere harcadığı tahmini <b className="font-semibold">{fmtNum(hours)} saate</b> karşı GPU <b className="font-semibold">{(g.hours ?? 0).toLocaleString("tr-TR")} saat</b> açık kaldı
-                ve <b className="font-semibold">${(g.cost_usd ?? 0).toLocaleString("tr-TR")}</b> tuttu. Agent analizleri olay başına birkaç dakika kazandırıyorsa GPU kendini öder;
-                bunu "analiz yapıldı" sayısı arttıkça bu sayfa gösterecek.
+                Aynı dönemde nöbetçinin alert'lere harcadığı tahmini <b className="font-semibold">{fmtNum(hours)} saate</b> karşılık GPU <b className="font-semibold">{(g.hours ?? 0).toLocaleString("tr-TR")} saat</b> açık kaldı
+                ve <b className="font-semibold">${(g.cost_usd ?? 0).toLocaleString("tr-TR")}</b> tuttu. Bu iki sayı aynı şeyi ölçmüyor: GPU, portaldeki araştırmalar için değil,
+                agent'lar ve model ayakta kalsın diye açık. Maliyeti neyin haklı çıkardığı ancak agent'ların gerçekten kullanıldığı ölçülebilirse söylenebilir.
               </p>
               {(g.failed_launches ?? 0) > 20 && (
                 <p className="text-ink-2">

@@ -9,6 +9,7 @@ import BarChart from "../components/BarChart";
 import Investigate, { GuideNote, type GuideItem } from "../components/Investigate";
 import AgentPanel from "../components/AgentPanel";
 import { RunbookPanel } from "../components/Runbook";
+import FixPanel from "../components/FixPanel";
 import { Code, Empty, ErrorBox, Loading, PageHeader, Panel, Pill, Section, Severity, Stat, td, tdn, th, thr } from "../components/ui";
 
 const LEVEL_TONE = { crit: "crit", warn: "warn", info: "mute" } as const;
@@ -84,6 +85,7 @@ export default function RuleDetail() {
               </Panel>
             ))}
           </div>
+          {d.fix && <FixPanel fix={d.fix} title={d.rule.title} />}
         </Section>
       )}
 

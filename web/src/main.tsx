@@ -27,6 +27,8 @@ const Admin = lazy(() => import("./pages/Admin"));
 const Cluster = lazy(() => import("./pages/Cluster"));
 const Work = lazy(() => import("./pages/Work"));
 const Architecture = lazy(() => import("./pages/Architecture"));
+const QueryCost = lazy(() => import("./pages/QueryCost"));
+const LogCost = lazy(() => import("./pages/LogCost"));
 
 applyTheme(getTheme());
 installClickTracking();
@@ -55,6 +57,8 @@ createRoot(document.getElementById("root")!).render(
               <Route path="cluster" element={<Cluster />} />
               <Route path="work" element={<Work />} />
               <Route path="architecture" element={<Architecture />} />
+              <Route path="query-cost" element={<QueryCost />} />
+              <Route path="log-cost" element={<LogCost />} />
               <Route path="admin" element={<Admin />} />
               <Route path="gelen-alertler" element={<Navigate to="/alerts" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />

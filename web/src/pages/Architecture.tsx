@@ -22,7 +22,7 @@ type Edge = { from: string; to: string; kind: Kind; label?: string };
 
 const W = 168, H = 62;
 const COL = [95, 315, 535, 760, 985];
-const HEADS = ["Üretim", "Telemetri", "Depolama", "Değerlendirme", "İnsan"];
+const HEADS = ["Üretim", "Telemetri", "Depolama", "Değerlendirme", "Ekip"];
 
 const EDGES: Edge[] = [
   { from: "prod", to: "otel", kind: "metric", label: "ölçüm" },
@@ -75,13 +75,13 @@ function buildNodes(rules: number, paused: number, days: number, team: number): 
     { id: "agent", col: 3, y: 400, title: "LLM agent'ları", sub: "gpt-oss-20b", role: "değerlendirme",
       body: "CloudWatch ve EKS agent'ları MCP üzerinden gerçek araç çağırıyor: log sorgusu çalıştırıyor, metrik çekiyor. Arkalarında era-llm-cluster-group-kk node grubunda tek bir g6.xlarge GPU var; bu makine gece kapatılıp sabah açılıyor.",
       facts: [["Model", "gpt-oss-20b"], ["Makine", "1 × g6.xlarge"], ["Arayüz", "MCP"]] },
-    { id: "chat", col: 4, y: 90, title: "Google Chat", sub: "alert bildirimi", role: "insan",
+    { id: "chat", col: 4, y: 90, title: "Google Chat", sub: "alert bildirimi", role: "ekip",
       body: "Alert'ler şu an yalnızca buraya düşüyor. Bağlı bir nöbet aracı olmadığı için kimin ne zaman cevapladığı ölçülemiyor; Maliyet ve değer sayfasındaki nöbet tablosunun eksik kalan tarafı tam olarak burası.",
       facts: [["Kanal", "Google Chat"], ["Yanıt süresi", "ölçülemiyor"]] },
-    { id: "portal", col: 4, y: 255, title: "SRE Portal", sub: "nginx + FastAPI", role: "değerlendirme",
-      body: "Bütün bu kaynakları tek ekranda toplayan yer: alert bulguları, olaylar ve atamaları, cluster durumu, prod'da ne değiştiği, servis hedefleri ve operasyon maliyeti. Atamalar ve SLO hedefleri ConfigMap'te saklanıyor; pod'un cluster üzerindeki tek yetkisi o iki ConfigMap'i okuyup güncellemek.",
-      facts: [["Arayüz", "React 19 + Vite"], ["Sunucu", "FastAPI"], ["Kalıcı veri", "2 ConfigMap"]] },
-    { id: "team", col: 4, y: 420, title: "SRE ekibi", sub: `${team} kişi`, role: "insan",
+    { id: "portal", col: 4, y: 255, title: "SRE Portal", sub: "tek ekran", role: "değerlendirme",
+      body: "Dağınık duran bu kaynakları tek yerde toplayan ekran: hangi alert'in bozuk olduğu, olaylar ve kime atandığı, cluster'ın durumu, prod'da ne değiştiği, servislerin hedefi tutup tutmadığı ve nöbetin maliyeti. Grafana'ya yalnızca okuma isteği atıyor, hiçbir şeyi değiştiremiyor. Atamalar ve hedefler kalıcı saklanıyor; cluster üzerindeki tek yetkisi o iki kaydı okuyup güncellemek.",
+      facts: [] },
+    { id: "team", col: 4, y: 420, title: "SRE ekibi", sub: `${team} kişi`, role: "ekip",
       body: "Olaylar portalden kişilere atanıyor, iş bitince Tamamlandı işaretleniyor ve her değişiklik denetim kaydına düşüyor. Atamalar 90 gün saklanıyor.",
       facts: [["Kişi", String(team)], ["Atama saklama", "90 gün"], ["Denetim kaydı", "her değişiklik"]] },
   ];
@@ -151,6 +151,9 @@ export default function Architecture() {
         <svg viewBox="0 0 1160 486" className="block h-auto w-full min-w-[1000px]" role="img"
           aria-label="Prod telemetrisinin servislerden SRE ekibine akışını gösteren diyagram">
           <defs>
+            <pattern id="sig-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+              <circle cx="1.5" cy="1.5" r="1" className="fill-edge" />
+            </pattern>
             {LEGEND.map((l) => (
               <marker key={l.kind} id={`sig-${l.kind}`} viewBox="0 0 10 10" refX="8.5" refY="5"
                 markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
@@ -159,9 +162,15 @@ export default function Architecture() {
             ))}
           </defs>
 
+          <rect x="0" y="0" width="1160" height="486" fill="url(#sig-dots)" opacity="0.45" />
+
           {HEADS.map((h, i) => (
-            <text key={h} x={COL[i]} y={26} textAnchor="middle"
-              className="fill-ink-3 font-mono text-[10.5px] tracking-[0.13em] uppercase">{h}</text>
+            <g key={h}>
+              {i % 2 === 0 && <rect x={COL[i] - 102} y="44" width="204" height="424" rx="12" className="fill-edge-soft" opacity="0.5" />}
+              <rect x={COL[i] - (h.length * 7 + 24) / 2} y="12" width={h.length * 7 + 24} height="21" rx="10.5" className="fill-edge-soft" />
+              <text x={COL[i]} y={27} textAnchor="middle"
+                className="fill-ink-3 font-mono text-[10.5px] tracking-[0.13em] uppercase">{h}</text>
+            </g>
           ))}
 
           {EDGES.map((e) => {
@@ -191,8 +200,12 @@ export default function Architecture() {
                 onFocus={() => { setHover(n.id); setSel(n.id); }} onBlur={() => setHover(null)}
                 onClick={() => setSel(n.id)}
                 onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); setSel(n.id); } }}>
+                {chosen && (
+                  <rect x={x - W / 2 - 5} y={n.y - H / 2 - 5} width={W + 10} height={H + 10} rx="15"
+                    fill="none" strokeWidth="1.5" className="stroke-accent" opacity="0.35" />
+                )}
                 <rect x={x - W / 2} y={n.y - H / 2} width={W} height={H} rx="10" strokeWidth={chosen ? 2.2 : 1.2}
-                  className={chosen ? "fill-accent-soft stroke-accent" : "fill-canvas stroke-edge"} />
+                  className={chosen ? "fill-accent-soft stroke-accent" : "fill-panel stroke-edge"} />
                 <text x={x} y={n.y - 4} textAnchor="middle" className="fill-ink text-[14px] font-semibold">{n.title}</text>
                 <text x={x} y={n.y + 15} textAnchor="middle" className="fill-ink-3 font-mono text-[11px]">{n.sub}</text>
               </g>
@@ -202,16 +215,18 @@ export default function Architecture() {
       </Panel>
 
       <Section title={detail.title} aside={<span className="font-mono text-[11px] tracking-wider text-ink-3 uppercase">{detail.role}</span>}>
-        <Panel className="grid gap-5 p-5 lg:grid-cols-[1.5fr_1fr] lg:gap-8">
+        <Panel className={`grid gap-5 p-5 ${detail.facts.length ? "lg:grid-cols-[1.5fr_1fr] lg:gap-8" : ""}`}>
           <p className="max-w-[62ch] text-[14.5px] text-ink-2">{detail.body}</p>
-          <dl className="flex min-w-0 flex-col gap-2 self-start">
-            {detail.facts.map(([k, v]) => (
-              <div key={k} className="flex items-baseline justify-between gap-4 border-b border-edge-soft pb-1.5 last:border-0">
-                <dt className="text-[12.5px] text-ink-3">{k}</dt>
-                <dd className="text-right font-mono text-[13px] font-medium tabular-nums">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          {detail.facts.length > 0 && (
+            <dl className="flex min-w-0 flex-col gap-2 self-start">
+              {detail.facts.map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-4 border-b border-edge-soft pb-1.5 last:border-0">
+                  <dt className="text-[12.5px] text-ink-3">{k}</dt>
+                  <dd className="text-right font-mono text-[13px] font-medium tabular-nums">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </Panel>
       </Section>
 

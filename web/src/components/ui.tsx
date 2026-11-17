@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { ago } from "../lib/format";
 
@@ -43,6 +43,68 @@ export const FINDING: Record<string, { label: string; tone: Tone }> = {
 export function FindingPill({ code }: { code: string }) {
   const f = FINDING[code] ?? { label: code, tone: "mute" as Tone };
   return <Pill tone={f.tone}>{f.label}</Pill>;
+}
+
+/** Bir rakamın yanındaki ⓘ: basınca "bu nasıl hesaplandı" açıklaması açılır.
+ *  Kutu `fixed` konumlanır; tablo gibi yatay kaydırmalı kapsayıcılar içinde kırpılmaması
+ *  ve dar ekranda taşmaması için konumu düğmenin yerine göre hesaplanıp ekrana sığdırılır. */
+export function Info({ title, children, align = "left" }: { title: string; children: ReactNode; align?: "left" | "right" }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  const place = useCallback(() => {
+    const b = btn.current?.getBoundingClientRect();
+    if (!b) return;
+    const pad = 12;
+    const width = Math.min(360, window.innerWidth - pad * 2);
+    let left = align === "right" ? b.right - width : b.left;
+    left = Math.min(Math.max(pad, left), window.innerWidth - width - pad);
+    const h = box.current?.offsetHeight ?? 180;
+    const below = window.innerHeight - b.bottom;
+    const top = below > h + pad ? b.bottom + 6 : Math.max(pad, b.top - h - 6);
+    setPos({ left, top, width });
+  }, [align]);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!box.current?.contains(t) && !btn.current?.contains(t)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
+
+  return (
+    <>
+      <button ref={btn} type="button" aria-expanded={open} aria-label={`${title} — nasıl hesaplandı`}
+        onClick={() => setOpen((v) => !v)}
+        className={`grid size-[18px] shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${open ? "border-accent bg-accent text-white" : "border-edge text-ink-3 hover:border-accent hover:text-accent"}`}>
+        i
+      </button>
+      {open && (
+        <div ref={box} role="dialog" aria-label={title}
+          style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, width: pos?.width ?? 320 }}
+          className="fixed z-50 flex flex-col gap-2 rounded-lg border border-edge bg-panel p-3.5 text-left font-sans text-[13px] font-normal tracking-normal normal-case shadow-2xl">
+          <span className="text-[13px] font-semibold text-ink">{title}</span>
+          <span className="leading-relaxed text-ink-2">{children}</span>
+          <button type="button" onClick={() => setOpen(false)} className="w-fit text-[12.5px] font-medium text-accent">Kapat</button>
+        </div>
+      )}
+    </>
+  );
 }
 
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {

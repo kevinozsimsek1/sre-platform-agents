@@ -42,6 +42,16 @@ SRE_TEAM = [x.strip() for x in _env("SRE_TEAM", "").split(",") if x.strip()]
 LOG_GROUP_PREFIX = _env("LOG_GROUP_PREFIX", "/aws/containerinsights/")
 GPU_PRICES = json.loads(_env("GPU_PRICES_USD", '{"g6.xlarge": 1.0064}'))
 
+# CloudWatch fiyatları (eu-central-1, on-demand). Fiyat değişirse ortam değişkeniyle güncellenir.
+CW_METRIC_USD_PER_1K = float(_env("CW_METRIC_USD_PER_1K", "0.01"))   # GetMetricData, 1000 metrik
+CW_LOGS_USD_PER_GB = float(_env("CW_LOGS_USD_PER_GB", "0.0063"))     # Logs Insights, taranan GB
+# Gerçek faturayı okumak için kullanılan AWS profili (Cost Explorer, prod hesabı).
+# Boşsa varsayılan oturum kullanılır. Cluster'da IRSA ile verilir; yalnızca ce:GetCostAndUsage gerekir.
+COST_AWS_PROFILE = _env("COST_AWS_PROFILE", "")
+# Log fiyatları: gerçek fatura okunabiliyorsa oradan türetilir, bunlar yalnızca yedek.
+LOGS_INGEST_USD_PER_GB = float(_env("LOGS_INGEST_USD_PER_GB", "0.63"))
+LOGS_STORAGE_USD_PER_GB = float(_env("LOGS_STORAGE_USD_PER_GB", "0.0324"))
+
 # Agent kayıt defteri. Yeni bir MCP agent'ı eklemek için AGENTS_JSON'a bir kayıt eklemek yeter:
 #   url: agent'ın POST /chat ucu olan servis adresi
 #   handles: bu agent'ın uygun olduğu sinyaller. Kural sorgusunda/etiketlerinde bunlardan biri geçerse önerilir.

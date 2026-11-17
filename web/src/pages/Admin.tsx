@@ -34,6 +34,10 @@ const ACTIONS: Record<string, string> = {
   incident_assigned: "Olayı atadı",
   work_done: "İşi tamamlandı yaptı",
   work_reopened: "İşi geri açtı",
+  cost_task_assigned: "Maliyet görevini atadı",
+  cost_task_done: "Maliyet görevini tamamladı",
+  cost_task_reopened: "Maliyet görevini geri açtı",
+  log_breakdown: "Log grubu içeriğini analiz etti",
 };
 
 function browser(ua: string): string {

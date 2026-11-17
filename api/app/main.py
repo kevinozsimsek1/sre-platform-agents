@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import agents, analysis, audit, changes, cluster, config, gpu, slo, targets, team
+from . import agents, analysis, audit, awscost, changes, cluster, config, costtasks, fixes, gpu, logcost, querycost, slo, targets, team
 from .cache import cached, invalidate
 from .grafana import GrafanaError
 
@@ -32,11 +32,27 @@ async def _keep_warm() -> None:
         await asyncio.sleep(max(60, config.CACHE_TTL - 60))
 
 
+async def _keep_warm_slow() -> None:
+    """Ağır ve yavaş değişen veri: bütün dashboard'ların taranması ve AWS faturası.
+
+    Ayrı bir döngüde, çünkü 78 dashboard okumak ve Cost Explorer'a istek atmak pahalı.
+    Önbellek dolu tutulduğu için sayfa ilk açılışta beklemez.
+    """
+    while True:
+        try:
+            bill = await cached("aws-cost", 6 * 3600, awscost.overview, False)
+            await cached("query-cost", 3600, lambda: querycost.overview(bill), True)
+        except Exception as exc:  # noqa: BLE001 — sayfanın kendisi yine isteyebilir
+            log.warning("Sorgu maliyeti arka planda hazırlanamadı: %s", exc)
+        await asyncio.sleep(50 * 60)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    task = asyncio.create_task(_keep_warm())
+    tasks = [asyncio.create_task(_keep_warm()), asyncio.create_task(_keep_warm_slow())]
     yield
-    task.cancel()
+    for t in tasks:
+        t.cancel()
 
 
 app = FastAPI(title="Nebim SRE Portal API", docs_url="/_portal/api/docs", openapi_url="/_portal/api/openapi.json", lifespan=lifespan)
@@ -148,9 +164,10 @@ async def rule(org: int, uid: str) -> dict:
     d = analysis.rule_detail(await model(), f"{org}:{uid}")
     if not d:
         raise HTTPException(404, "Kural bulunamadı")
-    r = (await model()).rules[f"{org}:{uid}"]
+    m = await model()
+    r = m.rules[f"{org}:{uid}"]
     return {**d, "analysis": agents.for_target(f"rule:{org}:{uid}"), "agents": agents.registry(),
-            "agent_suggestion": agents.recommend(analysis.signals(await model(), r))}
+            "agent_suggestion": agents.recommend(analysis.signals(m, r)), "fix": fixes.plan(m, r)}
 
 
 @api.get("/alerts/rules/{org}/{uid}/investigate")
@@ -232,7 +249,15 @@ async def incident_done(iid: str, req: DoneReq, request: Request) -> dict:
 @api.get("/team/work")
 async def team_work() -> dict:
     m = await model()
-    return {"fetched_at": m.fetched_at, **team.work(await team.assignments(), m.incidents)}
+    # Maliyet görevleri de kişiye atanıyor; "kimde ne var" sorusunun cevabında olmaları gerekir.
+    tasks: list[dict] = []
+    try:
+        bill = await cached("aws-cost", 6 * 3600, awscost.overview)
+        cost = await cached("query-cost", 3600, lambda: querycost.overview(bill))
+        tasks = [t for t in costtasks.merge(costtasks.build(cost), await costtasks.state()) if t["assignee"]]
+    except Exception as exc:  # noqa: BLE001 — maliyet okunamazsa olay işleri yine görünsün
+        log.warning("Maliyet görevleri okunamadı: %s", exc)
+    return {"fetched_at": m.fetched_at, **team.work(await team.assignments(), m.incidents), "cost_tasks": tasks}
 
 
 @api.get("/cluster")
@@ -241,6 +266,76 @@ async def cluster_overview(refresh: bool = False) -> dict:
         return await cached("cluster", 60, cluster.overview, refresh)
     except GrafanaError as e:
         raise HTTPException(502, str(e)) from e
+
+
+@api.get("/query-cost")
+async def query_cost(refresh: bool = False) -> dict:
+    """Gerçek CloudWatch faturası + onu açıklayan Grafana sorgu analizi.
+
+    İkisi de ağır: fatura Cost Explorer'a istek başına ücret ödetir (6 saat önbellek),
+    sorgu analizi bütün dashboard'ları okur (1 saat önbellek).
+    """
+    bill = await cached("aws-cost", 6 * 3600, awscost.overview, refresh)
+    cost = await cached("query-cost", 3600, lambda: querycost.overview(bill), refresh)
+    built = costtasks.build(cost)
+    st = await costtasks.state()
+    return {**cost, "tasks": costtasks.merge(built, st), "savings": costtasks.history(st, built), "team": team.members()}
+
+
+async def _cost_task(tid: str) -> dict:
+    bill = await cached("aws-cost", 6 * 3600, awscost.overview)
+    cost = await cached("query-cost", 3600, lambda: querycost.overview(bill))
+    t = next((x for x in costtasks.build(cost) if x["id"] == tid), None)
+    if not t:
+        raise HTTPException(404, "Görev bulunamadı")
+    return t
+
+
+@api.put("/cost-tasks/{tid:path}/assignee")
+async def cost_task_assign(tid: str, req: AssignReq, request: Request) -> dict:
+    t = await _cost_task(tid)
+    before = (await costtasks.state()).get(tid)
+    try:
+        a = await costtasks.assign(tid, req.to, t)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    await audit.write({"kind": "team", "action": "cost_task_assigned", "target": tid,
+                       "detail": f"{(before or {}).get('to') or 'kimse'} → {req.to or 'kimse'} · {t['title']}", **audit.who(request)})
+    return {"assignee": a}
+
+
+@api.put("/cost-tasks/{tid:path}/done")
+async def cost_task_done(tid: str, req: DoneReq, request: Request) -> dict:
+    try:
+        a = await costtasks.set_done(tid, req.done)
+    except KeyError as e:
+        raise HTTPException(404, "Bu görev kimseye atanmamış") from e
+    await audit.write({"kind": "team", "action": "cost_task_done" if req.done else "cost_task_reopened", "target": tid,
+                       "detail": f"{a.get('to')} · {a.get('title')}", **audit.who(request)})
+    return {"assignee": a}
+
+
+@api.get("/log-cost")
+async def log_cost(refresh: bool = False) -> dict:
+    """Log gruplarının alım ve saklama maliyeti. Yüzlerce grup için metrik okur: uzun önbellek."""
+    bill = await cached("aws-cost", 6 * 3600, awscost.overview)
+    data = await cached("log-cost", 6 * 3600, lambda: logcost.overview(bill), refresh)
+    return {**data, "bill": bill}
+
+
+@api.get("/log-cost/breakdown")
+async def log_cost_breakdown(group: str, request: Request, minutes: int = 15) -> dict:
+    """Bir log grubunun içinde ne olduğu: kısa bir örnek pencere taranıp bileşene göre kırılır.
+
+    Logs Insights taranan bayt başına ücretlidir; bu yüzden pencere kısa tutulur ve ölçümün
+    kendi maliyeti yanıtta döner. İstek denetim kaydına düşer.
+    """
+    minutes = max(5, min(minutes, logcost.MAX_MINUTES))
+    bill = await cached("aws-cost", 6 * 3600, awscost.overview)
+    d = await logcost.breakdown(group, minutes, bill)
+    await audit.write({"kind": "cost", "action": "log_breakdown", "target": group,
+                       "detail": f"{minutes} dk örnek · tarama ${d.get('scan_usd', 0)}", **audit.who(request)})
+    return d
 
 
 @api.get("/changes")
