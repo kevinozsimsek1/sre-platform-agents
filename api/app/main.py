@@ -12,10 +12,21 @@ from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, 
 from pydantic import BaseModel, Field
 
 from . import agents, analysis, audit, awscost, changes, cluster, config, costtasks, fixes, gpu, logcost, querycost, slo, targets, team
-from .cache import cached, invalidate
+from .cache import available, cached, invalidate
 from .grafana import GrafanaError
 
 log = logging.getLogger("portal")
+
+
+# Cost Explorer istek başına ücretlidir ($0,01) ve fatura verisi günde en çok bir iki kez
+# güncellenir; kapanmış ayın rakamları ise hiç değişmez. O yüzden günde bir çekilir:
+# 6 saatlik önbellek ayda ~120 istek demekti, bu ~30.
+BILL_TTL = 24 * 3600
+
+
+async def aws_bill(force: bool = False) -> dict:
+    """AWS faturası (önbellekli). Kesintide eski geçerli veri korunur, hata saklanmaz."""
+    return await cached("aws-cost", BILL_TTL, awscost.overview, force, ok=available)
 
 
 async def _keep_warm() -> None:
@@ -40,8 +51,8 @@ async def _keep_warm_slow() -> None:
     """
     while True:
         try:
-            bill = await cached("aws-cost", 6 * 3600, awscost.overview, False)
-            await cached("query-cost", 3600, lambda: querycost.overview(bill), True)
+            bill = await aws_bill()
+            await cached("query-cost", 3600, lambda: querycost.overview(bill), True, ok=available)
         except Exception as exc:  # noqa: BLE001 — sayfanın kendisi yine isteyebilir
             log.warning("Sorgu maliyeti arka planda hazırlanamadı: %s", exc)
         await asyncio.sleep(50 * 60)
@@ -252,8 +263,8 @@ async def team_work() -> dict:
     # Maliyet görevleri de kişiye atanıyor; "kimde ne var" sorusunun cevabında olmaları gerekir.
     tasks: list[dict] = []
     try:
-        bill = await cached("aws-cost", 6 * 3600, awscost.overview)
-        cost = await cached("query-cost", 3600, lambda: querycost.overview(bill))
+        bill = await aws_bill()
+        cost = await cached("query-cost", 3600, lambda: querycost.overview(bill), ok=available)
         tasks = [t for t in costtasks.merge(costtasks.build(cost), await costtasks.state()) if t["assignee"]]
     except Exception as exc:  # noqa: BLE001 — maliyet okunamazsa olay işleri yine görünsün
         log.warning("Maliyet görevleri okunamadı: %s", exc)
@@ -272,19 +283,19 @@ async def cluster_overview(refresh: bool = False) -> dict:
 async def query_cost(refresh: bool = False) -> dict:
     """Gerçek CloudWatch faturası + onu açıklayan Grafana sorgu analizi.
 
-    İkisi de ağır: fatura Cost Explorer'a istek başına ücret ödetir (6 saat önbellek),
+    İkisi de ağır: fatura Cost Explorer'a istek başına ücret ödetir (günlük önbellek),
     sorgu analizi bütün dashboard'ları okur (1 saat önbellek).
     """
-    bill = await cached("aws-cost", 6 * 3600, awscost.overview, refresh)
-    cost = await cached("query-cost", 3600, lambda: querycost.overview(bill), refresh)
+    bill = await aws_bill(refresh)
+    cost = await cached("query-cost", 3600, lambda: querycost.overview(bill), refresh, ok=available)
     built = costtasks.build(cost)
     st = await costtasks.state()
     return {**cost, "tasks": costtasks.merge(built, st), "savings": costtasks.history(st, built), "team": team.members()}
 
 
 async def _cost_task(tid: str) -> dict:
-    bill = await cached("aws-cost", 6 * 3600, awscost.overview)
-    cost = await cached("query-cost", 3600, lambda: querycost.overview(bill))
+    bill = await aws_bill()
+    cost = await cached("query-cost", 3600, lambda: querycost.overview(bill), ok=available)
     t = next((x for x in costtasks.build(cost) if x["id"] == tid), None)
     if not t:
         raise HTTPException(404, "Görev bulunamadı")
@@ -318,8 +329,8 @@ async def cost_task_done(tid: str, req: DoneReq, request: Request) -> dict:
 @api.get("/log-cost")
 async def log_cost(refresh: bool = False) -> dict:
     """Log gruplarının alım ve saklama maliyeti. Yüzlerce grup için metrik okur: uzun önbellek."""
-    bill = await cached("aws-cost", 6 * 3600, awscost.overview)
-    data = await cached("log-cost", 6 * 3600, lambda: logcost.overview(bill), refresh)
+    bill = await aws_bill()
+    data = await cached("log-cost", 6 * 3600, lambda: logcost.overview(bill), refresh, ok=available)
     return {**data, "bill": bill}
 
 
@@ -331,7 +342,7 @@ async def log_cost_breakdown(group: str, request: Request, minutes: int = 15) ->
     kendi maliyeti yanıtta döner. İstek denetim kaydına düşer.
     """
     minutes = max(5, min(minutes, logcost.MAX_MINUTES))
-    bill = await cached("aws-cost", 6 * 3600, awscost.overview)
+    bill = await aws_bill()
     d = await logcost.breakdown(group, minutes, bill)
     await audit.write({"kind": "cost", "action": "log_breakdown", "target": group,
                        "detail": f"{minutes} dk örnek · tarama ${d.get('scan_usd', 0)}", **audit.who(request)})

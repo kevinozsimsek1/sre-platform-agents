@@ -342,7 +342,9 @@ export default function QueryCost() {
                           AWS Cost Explorer'dan <span className="font-mono">GetCostAndUsage</span> çağrısıyla,
                           servis <span className="font-mono">AmazonCloudWatch</span> filtresi ve kullanım tipine göre gruplanarak okunuyor.
                           Tahmin ya da liste fiyatı hesabı değil: kesilmiş faturadaki satırların kendisi.
-                          Cost Explorer her istek için ücret aldığı için 6 saatte bir yenilenir.
+                          Cost Explorer istek başına $0,01 aldığı ve fatura verisi günde en çok bir iki kez
+                          güncellendiği için günde bir yenilenir: ayda ~30 istek, yani $0,30. Sağ üstteki
+                          yenile düğmesi beklemeden yeni veri çeker ve o istek de aynı ücrete tabidir.
                         </Info>
                       </span>
                     </th>
