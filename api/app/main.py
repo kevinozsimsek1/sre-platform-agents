@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Cookie, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import agents, analysis, audit, awscost, changes, cluster, config, costtasks, fixes, gpu, logcost, querycost, slo, targets, team
+from . import agents, analysis, audit, awscost, changes, cluster, config, costtasks, fixes, gpu, idle, logcost, querycost, slo, targets, team
 from .cache import available, cached, invalidate
 from .grafana import GrafanaError
 
@@ -324,6 +324,16 @@ async def cost_task_done(tid: str, req: DoneReq, request: Request) -> dict:
     await audit.write({"kind": "team", "action": "cost_task_done" if req.done else "cost_task_reopened", "target": tid,
                        "detail": f"{a.get('to')} · {a.get('title')}", **audit.who(request)})
     return {"assignee": a}
+
+
+@api.get("/idle")
+async def idle_resources(refresh: bool = False) -> dict:
+    """Kimsenin bakmadığı maliyet: hesap ve bölge taraması + "bu kullanılıyor mu" kanıtı.
+
+    Hesap başına tek Cost Explorer isteği ($0,01), geri kalan her çağrı ücretsiz describe.
+    Günde bir yenilenir; kaynak envanteri bundan daha hızlı değişmiyor.
+    """
+    return await cached("idle", 24 * 3600, idle.overview, refresh, ok=available)
 
 
 @api.get("/log-cost")

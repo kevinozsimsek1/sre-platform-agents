@@ -48,6 +48,10 @@ CW_LOGS_USD_PER_GB = float(_env("CW_LOGS_USD_PER_GB", "0.0063"))     # Logs Insi
 # Gerçek faturayı okumak için kullanılan AWS profili (Cost Explorer, prod hesabı).
 # Boşsa varsayılan oturum kullanılır. Cluster'da IRSA ile verilir; yalnızca ce:GetCostAndUsage gerekir.
 COST_AWS_PROFILE = _env("COST_AWS_PROFILE", "")
+# Atıl kaynak taraması birden çok hesapta çalışır: israf ana hesapta değil, kimsenin
+# bakmadığı hesap-bölge çiftinde birikir. Biçim: "etiket=profil" çiftleri, virgülle ayrılmış.
+# Boş bırakılırsa yalnızca COST_AWS_PROFILE taranır. Cluster'da profil yerine IRSA kullanılır.
+IDLE_AWS_ACCOUNTS = _env("IDLE_AWS_ACCOUNTS", "")
 # Log fiyatları: gerçek fatura okunabiliyorsa oradan türetilir, bunlar yalnızca yedek.
 LOGS_INGEST_USD_PER_GB = float(_env("LOGS_INGEST_USD_PER_GB", "0.63"))
 LOGS_STORAGE_USD_PER_GB = float(_env("LOGS_STORAGE_USD_PER_GB", "0.0324"))

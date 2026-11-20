@@ -239,3 +239,40 @@ export type LogBreakdown =
       scan_gb: number; scan_usd: number;
       parts: { name: string; share: number; sample_mb: number; lines: number; streams: number; month_gb: number; month_usd: number }[];
     };
+
+/** Kimsenin bakmadığı maliyet: hesap ve bölge taraması + "bu kullanılıyor mu" kanıtı. */
+export type IdleContent = { label: string; value: string };
+
+export type IdleResource = {
+  kind: "ec2" | "ebs" | "nat" | "eip" | "ipv4" | "elb" | "ecs" | "rds" | "snapshot" | "hata";
+  id: string; name: string; region: string; account: string;
+  detail?: string | null; vpc?: string | null; since?: string | null;
+  usd_month: number; flags: string[];
+  evidence?: string | null; note?: string | null; basis?: string | null;
+  contents?: IdleContent[];
+};
+
+export type IdleRegion = {
+  region: string; usd_last_full: number; usd_current: number; swept: boolean;
+  items: { usage_type: string; cost: number; qty: number }[];
+};
+
+export type IdleAccount = {
+  label: string; account: string | null; month: string; current_month: string;
+  usd_last_full: number; other_regions_usd: number; home_region: string;
+  regions: IdleRegion[]; resources: IdleResource[];
+};
+
+export type Idle =
+  | { available: false; reason: string; errors?: { label: string; reason: string }[] }
+  | {
+      available: true; fetched_at: number; window_days: number;
+      accounts: IdleAccount[];
+      errors: { label: string; reason: string }[];
+      summary: {
+        accounts: number; regions: number; usd_last_full: number;
+        away_regions: number; away_usd: number;
+        away: { account: string; region: string; usd: number }[];
+        flagged: number; flagged_usd: number;
+      };
+    };

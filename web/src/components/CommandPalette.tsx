@@ -19,6 +19,7 @@ const PAGES: Item[] = [
   { to: "/value", label: "Maliyet ve değer" },
   { to: "/query-cost", label: "Sorgu maliyeti (CloudWatch, Logs Insights, dashboard)" },
   { to: "/log-cost", label: "Log maliyeti (hangi log grubu ne kadar, saklama süresi)" },
+  { to: "/idle", label: "Atıl kaynaklar (kullanılmayan makine, disk, NAT, yük dengeleyici)" },
   { to: "/architecture", label: "Sinyal haritası (mimari, veri nereden geliyor)" },
   { to: "/admin", label: "Yönetim (denetim kaydı, servis hedefleri)" },
 ].map((p) => ({ ...p, group: "Sayfalar", icon: <FileText size={15} />, text: p.label }));
