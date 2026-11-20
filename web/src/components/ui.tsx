@@ -139,7 +139,7 @@ export function Section({ title, children, aside }: { title: ReactNode; children
 export function Stat({ value, label, tone, hint }: { value: ReactNode; label: ReactNode; tone?: "crit" | "warn" | "good"; hint?: ReactNode }) {
   const color = tone === "crit" ? "text-crit" : tone === "warn" ? "text-warn" : tone === "good" ? "text-good" : "";
   return (
-    <Panel className="flex flex-col gap-1 px-4 py-3.5">
+    <Panel className="flex h-full flex-col gap-1 px-4 py-3.5 transition-colors group-hover:border-accent">
       <span className={`text-[26px] font-semibold tracking-tight tabular-nums ${color}`}>{value}</span>
       <span className="text-[13px] leading-snug text-ink-2">{label}</span>
       {hint && <span className="text-[12px] text-ink-3">{hint}</span>}
